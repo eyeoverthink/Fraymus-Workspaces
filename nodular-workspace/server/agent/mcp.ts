@@ -18,6 +18,7 @@ type ServerDef = {
   // Server is skipped unless every listed env var is set.
   requires?: string[]
   disabled?: boolean
+  imported?: boolean
 }
 
 export type McpState = { name: string; status: 'connected' | 'skipped' | 'error'; tools: number; detail?: string }
@@ -65,7 +66,8 @@ async function connect(def: ServerDef): Promise<{ client: Client; tools: Tool[] 
   } else throw new Error('needs url or command')
 
   const listed = await withTimeout(client.listTools(), 15000, 'list tools')
-  const safe = new Set(def.safeTools || [])
+  // Only locally shipped, explicitly reviewed read-only tools may bypass per-call approval.
+  const safe = new Set(def.imported ? [] : def.safeTools || [])
   const tools = listed.tools.map((t): Tool => ({
     name: `${def.name}__${t.name}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64),
     description: `[${def.name}] ${t.description || t.name}`.slice(0, 1000),

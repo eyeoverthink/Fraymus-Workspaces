@@ -50,10 +50,38 @@ function readDir(dir: string, source: 'default' | 'override'): AgentDef[] {
   return out
 }
 
+function readRosters(dir: string): AgentDef[] {
+  if (!existsSync(dir)) return []
+  const out: AgentDef[] = []
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('_roster.json')).sort()) {
+    try {
+      const entries = JSON.parse(readFileSync(`${dir}/${f}`, 'utf8'))
+      if (!Array.isArray(entries)) throw new Error('roster must be an array')
+      for (const item of entries) {
+        if (!item || !validId(item.id) || !item.name || !item.systemPrompt || !Array.isArray(item.tools)) {
+          throw new Error('each roster entry requires a valid id, name, prompt, and tool list')
+        }
+        out.push({
+          id: String(item.id),
+          name: String(item.name).slice(0, 60),
+          role: item.role ? String(item.role).slice(0, 120) : undefined,
+          description: item.description ? String(item.description).slice(0, 300) : undefined,
+          tools: item.tools.map(String),
+          systemPrompt: String(item.systemPrompt).slice(0, 8000),
+          source: 'default'
+        })
+      }
+    } catch (e: any) {
+      console.warn(`[agents] skipping roster ${dir}/${f}: ${e.message}`)
+    }
+  }
+  return out
+}
+
 // Read on every call so edits to the files (by hand, git pull, or an agent over MCP) apply immediately.
 export function loadManifests(): AgentDef[] {
   const merged = new Map<string, AgentDef>()
-  for (const a of [...readDir(defaultsDir(), 'default'), ...readDir(overrideDir(), 'override')]) merged.set(a.id, a)
+  for (const a of [...readDir(defaultsDir(), 'default'), ...readRosters(defaultsDir()), ...readDir(overrideDir(), 'override')]) merged.set(a.id, a)
   return [...merged.values()]
 }
 

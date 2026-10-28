@@ -2,6 +2,8 @@ import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import { existsSync, readFileSync } from 'node:fs'
 import { db, now } from './db'
+import { listActionLog } from './audit'
+import { listTimeAuditEntries } from './time-audit'
 import { runFlux, runRemover, runUpscaler } from '../services'
 import { saveImage, outputsDir, runPipeline } from '../pipeline'
 import type { Store } from '../store'
@@ -90,6 +92,16 @@ export const builtinTools: Tool[] = [
     async run(a, c) { return { memories: searchMemories(c.userId, String(a.query || ''), 8) } }
   },
   {
+    name: 'action_log', risk: 'safe', description: 'Read recent recorded agent tool actions for this agent. Logs record action names and outcomes, not full arguments or private outputs.',
+    parameters: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 50 } } },
+    async run(a, c) { return { actions: listActionLog(c.userId, c.agentId, Number(a.limit) || 20) } }
+  },
+  {
+    name: 'time_audit_search', risk: 'safe', description: 'Read the user-entered time-audit blocks and summary for an ISO date range; no activity is monitored automatically.',
+    parameters: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } },
+    async run(a, c) { return listTimeAuditEntries(c.userId, a.from ? String(a.from) : undefined, a.to ? String(a.to) : undefined) }
+  },
+  {
     name: 'web_search', risk: 'safe', description: 'Search the web. Returns titles, URLs and snippets.',
     parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     async run(a) { return { results: await webSearch(String(a.query || '')) } }
@@ -105,7 +117,7 @@ export const builtinTools: Tool[] = [
     }
   },
   {
-    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt (FLUX). Returns an imageUrl.',
+    name: 'generate_image', risk: 'approval', description: 'Generate an image from a text prompt (may call a configured external inference provider). Requires user approval.',
     parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] },
     async run(a) {
       const { png, mocked } = await runFlux(String(a.prompt || ''))
@@ -121,7 +133,7 @@ export const builtinTools: Tool[] = [
     }
   },
   {
-    name: 'upscale_image', risk: 'safe', description: 'Upscale an image URL by 2-4x. Returns imageUrl.',
+    name: 'upscale_image', risk: 'approval', description: 'Upscale an image URL by 2-4x. A configured Replicate token may incur provider charges; requires user approval.',
     parameters: { type: 'object', properties: { imageUrl: { type: 'string' }, scale: { type: 'integer', minimum: 1, maximum: 4 } }, required: ['imageUrl'] },
     async run(a) {
       const { png, from, to, engine } = await runUpscaler(await loadImage(String(a.imageUrl)), Math.min(Math.max(parseInt(a.scale) || 4, 1), 4))

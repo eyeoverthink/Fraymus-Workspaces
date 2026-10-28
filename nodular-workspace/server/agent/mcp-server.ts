@@ -4,9 +4,11 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod'
 import { can, verifyBearer, type Principal, type Scope } from './auth'
 import { allTools } from './tools'
+import { listSkills } from './skills'
 import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns } from './automations'
 import { importServers, mcpServers, removeServer } from './mcp'
-import { callToolDirect, decideApproval, getAgent, getThread, listAgents, listThreads, resetAgentManifest, runAgentAndWait, saveAgentManifest } from './runtime'
+import { callToolDirect, getAgent, getThread, listActionLog, listAgents, listThreads, resetAgentManifest, runAgentAndWait, saveAgentManifest } from './runtime'
+import { listTimeAuditEntries, saveTimeAuditEntry } from './time-audit'
 
 const out = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] })
 const issuer = (req: any) => process.env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`
@@ -32,19 +34,25 @@ function buildServer(p: Principal) {
     ({ id }) => ({ removed: resetAgentManifest(id) }))
   def('list_tools', 'read', 'List every tool agents can use, with risk level and JSON schema.', {},
     () => allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description, parameters: t.parameters })))
-  def('run_agent', 'run', 'Send a message to an agent and wait for its reply. Runs appear in the app UI as threads. If status is awaiting_approval, approve in the app or call decide_approval (admin).',
+  def('list_skills', 'read', 'List implemented native skills and optional MCP integrations, including setup and availability status.', {},
+    () => listSkills(allTools(), mcpServers()))
+  def('run_agent', 'run', 'Send a message to an agent and wait for its reply. Runs appear in the app UI as threads. If status is awaiting_approval, review and approve or reject it in the authenticated app.',
     { agentId: z.string(), message: z.string(), threadId: z.string().optional(), waitSeconds: z.number().min(1).max(600).optional() },
     (a) => runAgentAndWait(uid, a.agentId, a.message, a.threadId, (a.waitSeconds ?? 120) * 1000))
   def('list_threads', 'read', 'List recent conversations.', {}, () => listThreads(uid))
+  def('list_action_log', 'read', 'Read recent user-scoped action audit entries (action, outcome, and timestamp; no full arguments or private outputs).', { agentId: z.string().optional(), limit: z.number().int().min(1).max(200).optional() },
+    ({ agentId, limit }) => listActionLog(uid, agentId, limit))
+  def('list_time_audit', 'read', 'Read the user’s time-audit entries and summary for an ISO date range (defaults to the most recent 48 hours).', { from: z.string().optional(), to: z.string().optional() },
+    ({ from, to }) => listTimeAuditEntries(uid, from, to))
+  def('log_time_audit', 'admin', 'Create or update a 30-minute time-audit entry. This writes only the signed-in user’s Nodular database; it does not monitor activity.', { id: z.number().int().positive().optional(), startedAt: z.union([z.string(), z.number()]), activity: z.string(), energy: z.number().int().min(1).max(10), valueUsd: z.number().min(0).max(1000000), complaint: z.string().optional() },
+    ({ id, ...entry }) => saveTimeAuditEntry(uid, entry, id))
   def('get_thread', 'read', 'Get a conversation: messages, run status, pending approvals.', { id: z.string(), lastMessages: z.number().min(1).max(200).optional() },
     ({ id, lastMessages }) => {
       const t = getThread(uid, id)
       if (!t) throw new Error('thread not found')
       return { ...t, messages: t.messages.slice(-(lastMessages ?? 30)) }
     })
-  def('decide_approval', 'admin', 'Approve or reject a pending tool call that an agent requested.', { approvalId: z.string(), approve: z.boolean() },
-    ({ approvalId, approve }) => decideApproval(uid, approvalId, approve))
-  def('call_tool', 'admin', 'Execute any registered tool directly (built-ins, HTTP tools, imported MCP tools) without an agent.', { name: z.string(), arguments: z.record(z.string(), z.any()).optional() },
+  def('call_tool', 'admin', 'Execute a registered safe tool directly. Approval-required tools must be requested by an agent and approved through the app; this endpoint cannot bypass that gate.', { name: z.string(), arguments: z.record(z.string(), z.any()).optional() },
     async ({ name, arguments: args }) => callToolDirect(uid, name, args))
   def('list_mcp_servers', 'read', 'List MCP servers this workspace is connected to and their status.', {}, () => mcpServers())
   def('import_mcp_server', 'admin', 'Connect another MCP server (http url, or command if ALLOW_STDIO_IMPORT=1). Accepts {name,url|command,args,env,headers,safeTools} or a {mcpServers:{...}} document. Its tools become <name>__<tool>.',
@@ -53,7 +61,7 @@ function buildServer(p: Principal) {
   def('remove_mcp_server', 'admin', 'Disconnect and forget an imported MCP server.', { name: z.string() },
     async ({ name }) => ({ removed: await removeServer(name) }))
   def('list_automations', 'read', 'List scheduled automations (cron, UTC) with next run and last result.', {}, () => listAutomations(uid))
-  def('upsert_automation', 'admin', 'Create/update a scheduled automation. cron is 5-field UTC (e.g. "0 8 * * *"). kind "agent" needs agentId+prompt; kind "tool" needs tool+args. Unattended agent runs never auto-approve risky tools.',
+  def('upsert_automation', 'admin', 'Create/update a scheduled automation. cron is 5-field UTC (e.g. "0 8 * * *"). kind "agent" needs agentId+prompt; kind "tool" needs a registered safe tool+args. Unattended runs never auto-approve risky tools.',
     { id: z.string().optional(), name: z.string(), cron: z.string(), kind: z.enum(['agent', 'tool']).optional(), agentId: z.string().optional(), prompt: z.string().optional(), tool: z.string().optional(), args: z.record(z.string(), z.any()).optional(), enabled: z.boolean().optional() },
     (a) => saveAutomation(uid, a))
   def('run_automation', 'admin', 'Run an automation now and return its result.', { id: z.string() }, ({ id }) => runAutomation(uid, id, 'manual'))

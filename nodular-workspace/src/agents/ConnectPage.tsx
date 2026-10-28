@@ -86,6 +86,58 @@ function Access() {
   )
 }
 
+function GoogleAccount() {
+  const [data, setData] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const load = useCallback(() => call('/api/integrations/google').then(setData).catch((e) => toast('error', e.message)), [])
+  useEffect(() => { load() }, [load])
+
+  const connect = async () => {
+    setBusy(true)
+    try {
+      const result = await call('/api/integrations/google/connect', { method: 'POST' })
+      window.location.assign(result.authorizationUrl)
+    } catch (e: any) {
+      toast('error', e.message)
+      setBusy(false)
+    }
+  }
+  const disconnect = async () => {
+    setBusy(true)
+    try {
+      await call('/api/integrations/google', { method: 'DELETE' })
+      toast('success', 'Google account disconnected')
+      await load()
+    } catch (e: any) { toast('error', e.message); await load() }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div style={card}>
+      <h3 style={{ margin: '0 0 8px' }}>Google Gmail + Calendar</h3>
+      <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
+        Status: <b style={{ color: data?.connected ? '#22c55e' : data?.configured ? '#fbbf24' : '#888' }}>
+          {data?.connected ? `Connected as ${data.email}` : data?.configured ? 'Not connected' : 'Server setup required'}
+        </b>
+      </div>
+      <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
+        Available actions: Gmail search (snippets only), create one reviewed draft, send one approved email, list primary-calendar events, and create one approved event. No bulk outreach, attachments, event changes, or attendee invitations.
+      </div>
+      {!data?.configured && (
+        <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 8 }}>
+          Configure <code>{(data?.missing || ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'INTEGRATION_ENCRYPTION_KEY']).join(', ')}</code> on the server. Register the callback URL below in your Google OAuth client. Tokens are encrypted in the app database.
+        </div>
+      )}
+      {data?.callbackUrl && <div style={{ ...mono, marginBottom: 8 }}>Google OAuth redirect URI: {data.callbackUrl}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {!data?.connected
+          ? <button style={btn} disabled={busy || !data?.configured} onClick={connect}>{busy ? 'Opening Google…' : 'Connect Google account'}</button>
+          : <button style={btn} disabled={busy} onClick={disconnect}>{busy ? 'Disconnecting…' : 'Disconnect Google account'}</button>}
+      </div>
+    </div>
+  )
+}
+
 function Servers() {
   const [list, setList] = useState<any[]>([])
   const [text, setText] = useState('{\n  "mcpServers": {\n    "example": { "url": "http://127.0.0.1:3900/mcp/" }\n  }\n}')
@@ -109,7 +161,7 @@ function Servers() {
         </div>
       ))}
       <textarea style={{ ...input, width: '100%', height: 100, fontFamily: 'monospace', marginTop: 8, boxSizing: 'border-box' }} value={text} onChange={(e) => setText(e.target.value)} />
-      <div style={{ fontSize: 11, color: '#888', margin: '4px 0' }}>Paste one server or a Claude-Desktop style <code>mcpServers</code> block. Command (stdio) servers need <code>ALLOW_STDIO_IMPORT=1</code> on the server. Tools appear as <code>name__tool</code> and ask for approval unless marked in <code>safeTools</code>.</div>
+      <div style={{ fontSize: 11, color: '#888', margin: '4px 0' }}>Paste one server or a Claude-Desktop style <code>mcpServers</code> block. Command (stdio) servers need <code>ALLOW_STDIO_IMPORT=1</code> on the server. Imported tools always ask for approval before execution; client-supplied <code>safeTools</code> settings are not trusted.</div>
       <button style={btn} onClick={imp}>Import</button>
     </div>
   )
@@ -161,8 +213,16 @@ function Manifests() {
 }
 
 export default function ConnectPage() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('google')
+    if (result === 'connected') toast('success', 'Google Gmail and Calendar connected')
+    if (result === 'error') toast('error', 'Google connection failed or was cancelled; check setup and try again')
+    if (result) window.history.replaceState({}, '', window.location.pathname)
+  }, [])
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: 16, maxWidth: 900, margin: '0 auto' }}>
+      <GoogleAccount />
       <Access />
       <Servers />
       <Manifests />

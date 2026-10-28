@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import { providerStatus } from './llm'
 import { allTools } from './tools'
+import { listSkills } from './skills'
 import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns, installTemplate, TEMPLATES } from './automations'
 import { mcpStatus, mcpServers, importServers, removeServer } from './mcp'
+import { listActionLog } from './audit'
+import { listTimeAuditEntries, saveTimeAuditEntry } from './time-audit'
 import {
   listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
 } from './runtime'
+import { googleIntegrationStatus } from './google'
 
 const fail = (reply: any, e: any, code = 400) => reply.status(code).send({ error: e.message || String(e) })
 
@@ -13,8 +17,15 @@ export function registerAgentRoutes(app: FastifyInstance) {
   app.get('/api/agent/status', async () => ({
     ...(await providerStatus()),
     mcp: mcpStatus(),
-    tools: allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description }))
+    tools: allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description })),
+    skills: listSkills(allTools(), mcpStatus())
   }))
+
+  app.get('/api/integrations', async (req) => ({
+    integrations: [googleIntegrationStatus((req as any).userId, req)]
+  }))
+
+  app.get('/api/skills', async () => listSkills(allTools(), mcpStatus()))
 
   app.get('/api/agents', async (req) =>
     listAgents((req as any).userId).map(({ systemPrompt, ...a }) => a))
@@ -37,7 +48,7 @@ export function registerAgentRoutes(app: FastifyInstance) {
   app.delete('/api/mcp/:name', async (req, reply) => {
     try { return { ok: await removeServer((req.params as any).name) } } catch (e) { return fail(reply, e) }
   })
-  app.get('/api/automations', async (req) => ({ automations: listAutomations((req as any).userId), templates: TEMPLATES.map(({ key, name, cron }) => ({ key, name, cron })) }))
+  app.get('/api/automations', async (req) => ({ automations: listAutomations((req as any).userId), templates: TEMPLATES.map(({ key, name, cron, kind }) => ({ key, name, cron, kind: kind || 'agent' })) }))
   app.post('/api/automations', async (req, reply) => {
     try { return saveAutomation((req as any).userId, req.body as any) } catch (e) { return fail(reply, e) }
   })
@@ -74,4 +85,23 @@ export function registerAgentRoutes(app: FastifyInstance) {
   app.get('/api/agent/memories', async (req) => listMemories((req as any).userId))
   app.delete('/api/agent/memories/:id', async (req, reply) =>
     deleteMemory((req as any).userId, Number((req.params as any).id)) ? { ok: true } : reply.status(404).send({ error: 'Not found' }))
+  app.get('/api/agent/action-log', async (req, reply) => {
+    const query = req.query as any
+    const agentId = query.agentId ? String(query.agentId) : undefined
+    const limit = query.limit === undefined ? 100 : Number(query.limit)
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) return reply.status(400).send({ error: 'limit must be an integer from 1 to 200' })
+    return listActionLog((req as any).userId, agentId, limit)
+  })
+  app.get('/api/time-audit', async (req, reply) => {
+    try {
+      const query = req.query as any
+      return listTimeAuditEntries((req as any).userId, query.from ? String(query.from) : undefined, query.to ? String(query.to) : undefined)
+    } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/time-audit', async (req, reply) => {
+    try { return saveTimeAuditEntry((req as any).userId, req.body as any) } catch (e) { return fail(reply, e) }
+  })
+  app.put('/api/time-audit/:id', async (req, reply) => {
+    try { return saveTimeAuditEntry((req as any).userId, req.body as any, Number((req.params as any).id)) } catch (e) { return fail(reply, e) }
+  })
 }

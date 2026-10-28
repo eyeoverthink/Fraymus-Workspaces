@@ -17,6 +17,8 @@ import { startScheduler } from './agent/automations'
 import { registerOAuthRoutes, registerAccessRoutes } from './agent/auth'
 import { registerMcpServer } from './agent/mcp-server'
 import { registerMediaTools } from './agent/media'
+import { registerFleetSkills } from './agent/fleet-skills'
+import { registerGoogleRoutes, registerGoogleTools } from './agent/google'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -35,7 +37,7 @@ async function currentUser(req: any): Promise<string | null> {
 // Every /api route except the deployed run endpoint needs a signed-in user when auth is configured
 fastify.addHook('onRequest', async (req, reply) => {
   const path = req.url.split('?')[0]
-  if (!path.startsWith('/api/') || /^\/api\/workflows\/[^/]+\/run$/.test(path)) return
+  if (!path.startsWith('/api/') || /^\/api\/workflows\/[^/]+\/run$/.test(path) || path === '/api/integrations/google/callback') return
   const uid = await currentUser(req)
   if (!uid) return reply.status(401).send({ error: 'Sign in required' })
   ;(req as any).userId = uid
@@ -247,6 +249,8 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
 })
 
 registerMediaTools()
+registerFleetSkills()
+registerGoogleTools()
 initAgents(store)
 startScheduler()
 initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))
@@ -254,6 +258,7 @@ registerOAuthRoutes(fastify)
 registerMcpServer(fastify)
 registerAccessRoutes(fastify)
 registerAgentRoutes(fastify)
+registerGoogleRoutes(fastify)
 
 // Serve the built frontend when present (production / Docker)
 if (existsSync('./dist/index.html')) {

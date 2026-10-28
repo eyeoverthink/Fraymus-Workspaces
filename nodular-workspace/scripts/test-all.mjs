@@ -7,10 +7,18 @@ import { join } from 'node:path'
 const port = String(3100 + Math.floor(Math.random() * 500))
 const base = `http://localhost:${port}`
 const dataDir = mkdtempSync(join(tmpdir(), 'nodular-test-'))
-const win = process.platform === 'win32'
-const env = { ...process.env, PORT: port, DATA_DIR: dataDir, LLM_PROVIDERS: 'none', BASE: base, BASE_URL: base }
-const server = spawn(win ? 'npx.cmd' : 'npx', ['tsx', 'server/index.ts'], { env, stdio: 'ignore', shell: win })
-const stop = () => { if (win) spawn('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }); else server.kill() }
+const env = { ...process.env, PORT: port, DATA_DIR: dataDir, LLM_PROVIDERS: 'none', BASE: base, BASE_URL: base, GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', INTEGRATION_ENCRYPTION_KEY: '' }
+const server = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/index.ts'], { env, stdio: 'ignore' })
+const stop = async () => {
+  if (server.exitCode === null) {
+    server.kill()
+    await new Promise((resolve) => {
+      if (server.exitCode !== null) return resolve()
+      const timer = setTimeout(resolve, 3000)
+      server.once('exit', () => { clearTimeout(timer); resolve() })
+    })
+  }
+}
 
 async function ready() {
   for (let i = 0; i < 60; i++) {
@@ -24,11 +32,12 @@ const run = (file) => new Promise((res) => spawn(process.execPath, [file], { env
 let failed = 0
 try {
   await ready()
-  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs']) {
+  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-google.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-time-audit.mjs']) {
     console.log(`\n== ${f}`)
     if (await run(f)) failed++
   }
 } catch (e) { console.error(e.message); failed++ } finally {
-  stop()
-  setTimeout(() => { try { rmSync(dataDir, { recursive: true, force: true }) } catch {} process.exit(failed ? 1 : 0) }, 1500)
+  await stop()
+  try { rmSync(dataDir, { recursive: true, force: true }) } catch {}
 }
+process.exitCode = failed ? 1 : 0

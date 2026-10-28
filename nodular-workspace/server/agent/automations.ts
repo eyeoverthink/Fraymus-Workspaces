@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { db, now } from './db'
 import { getAgent, runAgentAndWait, callToolDirect } from './runtime'
+import { getTool } from './tools'
+import { recordAction } from './audit'
 
 // ---- 5-field cron (UTC): minute hour day-of-month month day-of-week. Supports *, lists, ranges, steps. ----
 const RANGES: [number, number][] = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]]
@@ -55,7 +57,12 @@ export function saveAutomation(userId: string, a: AutomationInput) {
   if (kind === 'agent') {
     if (!a.agentId || !getAgent(userId, a.agentId)) throw new Error('unknown agentId')
     if (!a.prompt?.trim()) throw new Error('prompt required for an agent automation')
-  } else if (!a.tool) throw new Error('tool required for a tool automation')
+  } else {
+    if (!a.tool) throw new Error('tool required for a tool automation')
+    const tool = getTool(a.tool)
+    if (!tool) throw new Error(`unknown tool: ${a.tool}`)
+    if (tool.risk !== 'safe') throw new Error(`tool "${a.tool}" requires user approval and cannot run unattended`)
+  }
   const id = a.id || randomUUID().slice(0, 8)
   const existing = db.prepare('select user_id from automations where id=?').get(id) as any
   if (existing && existing.user_id !== userId) throw new Error('id already taken')
@@ -97,11 +104,16 @@ export async function runAutomation(userId: string, id: string, trigger: 'schedu
       // Unattended: approval-risk tools stay pending for a human (status awaiting_approval), they are never auto-approved.
       const r = await runAgentAndWait(userId, a.agent_id, payload.prompt, undefined, 10 * 60_000)
       finish(r.pendingApprovals.length ? 'awaiting_approval' : r.status === 'done' ? 'done' : r.status, { output: r.reply, error: r.error, threadId: r.threadId })
+      recordAction(userId, a.agent_id, `automation:${a.name}`, r.pendingApprovals.length ? 'approval_requested' : r.status === 'done' ? 'succeeded' : 'failed', runId, r.threadId)
     } else {
+      const tool = getTool(a.tool)
+      if (!tool || tool.risk !== 'safe') throw new Error(`tool "${a.tool}" is unavailable or requires approval and cannot run unattended`)
       finish('done', { output: await callToolDirect(userId, a.tool, payload.args) })
+      recordAction(userId, 'automation', `automation:${a.name}`, 'succeeded', runId)
     }
   } catch (e: any) {
     finish('error', { error: e.message || String(e) })
+    recordAction(userId, a.agent_id || 'automation', `automation:${a.name}`, 'failed', runId)
   } finally {
     running.delete(id)
   }
@@ -130,9 +142,12 @@ export function startScheduler() {
 }
 
 export const TEMPLATES: (AutomationInput & { key: string })[] = [
-  { key: 'daily-report', name: 'Daily status report', cron: '0 8 * * *', agentId: 'eye_sovereign', prompt: 'Write a short daily report: what the saved memories say I am working on, open priorities, and one suggested next action. Save the report with memory_save.' },
+  { key: 'daily-report', name: 'Daily status report', cron: '0 8 * * *', agentId: 'eye_sovereign', prompt: 'Review relevant saved memories, list only verified progress and open priorities, and suggest at most one next action. Do not invent a metric or claim work ran. Save the report with memory_save only if useful. End with DONE, METRIC (if supported), BLOCKER, NEXT.' },
   { key: 'six-hour-research', name: 'Six-hourly research digest', cron: '0 */6 * * *', agentId: 'dev_archivist', prompt: 'Search the web for notable news in AI agents, MCP and self-hosted LLM tooling from the last day and give a 5-bullet digest with links.' },
-  { key: 'heartbeat', name: 'Heartbeat (every 5 minutes)', cron: '*/5 * * * *', kind: 'tool', tool: 'memory_search', args: { query: 'heartbeat' } }
+  { key: 'memory-check', name: 'Saved-memory search (every 5 minutes)', cron: '*/5 * * * *', kind: 'tool', tool: 'memory_search', args: { query: 'heartbeat' } },
+  { key: 'house-manager-briefing', name: 'House Manager morning briefing', cron: '0 7 * * *', agentId: 'morgan_house_manager', prompt: 'Prepare a concise morning briefing using only saved memories and information supplied by the user. No calendar or inbox is connected. State missing inputs instead of inventing a schedule. End with DONE, BLOCKER, NEXT.' },
+  { key: 'content-engine-drafts', name: 'Content Engine daily drafts', cron: '0 9 * * *', agentId: 'morgan_content_engine', prompt: 'Prepare content drafts using only supplied material and saved memories. Do not post or invent voice examples. If no source material is available, state that clearly. End with DONE, BLOCKER, NEXT.' },
+  { key: 'revenue-agent-briefing', name: 'Revenue Agent daily briefing', cron: '0 9 * * *', agentId: 'morgan_revenue_agent', prompt: 'Review saved user-provided revenue context and prepare a concise pipeline briefing. Do not claim CRM, email, calendar, invoice, or payment access; do not invent leads or revenue. Draft only. End with DONE, METRIC if supported, BLOCKER, NEXT.' }
 ]
 export const installTemplate = (userId: string, key: string) => {
   const t = TEMPLATES.find((x) => x.key === key)
