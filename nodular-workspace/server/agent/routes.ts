@@ -12,6 +12,10 @@ import {
 import { googleIntegrationStatus } from './google'
 import { notionIntegrationStatus } from './notion'
 import { buildIdeaReport, listIdeaReports, saveIdeaReport, type IdeaReport } from './idea-finder'
+import { salesIntegrationStatus } from './sales'
+import { canvaIntegrationStatus } from './canva'
+import { linkedinIntegrationStatus } from './linkedin'
+import { whisperIntegrationStatus } from './transcription'
 
 const fail = (reply: any, e: any, code = 400) => reply.status(code).send({ error: e.message || String(e) })
 
@@ -24,7 +28,14 @@ export function registerAgentRoutes(app: FastifyInstance) {
   }))
 
   app.get('/api/integrations', async (req) => ({
-    integrations: [googleIntegrationStatus((req as any).userId, req), notionIntegrationStatus((req as any).userId)]
+    integrations: [
+      googleIntegrationStatus((req as any).userId, req),
+      notionIntegrationStatus((req as any).userId),
+      ...salesIntegrationStatus((req as any).userId),
+      canvaIntegrationStatus((req as any).userId, req),
+      linkedinIntegrationStatus((req as any).userId, req),
+      whisperIntegrationStatus()
+    ]
   }))
 
   app.get('/api/skills', async () => listSkills(allTools(), mcpStatus()))

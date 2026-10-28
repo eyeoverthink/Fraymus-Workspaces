@@ -12,7 +12,10 @@ The app connects one Notion internal integration per Nodular user. The integrati
 
 ## Implemented operations
 
-- Search returns at most ten matching pages/databases with IDs, titles, URLs, and edit timestamps.
-- Read fetches one shared page and up to 12,000 characters from its direct child blocks. It does not recursively crawl nested pages or download files.
+- The Connect page searches shared page and data-source titles and can read a selected page.
+- `notion_search` returns at most ten matching pages/data sources with IDs, titles, URLs, and edit timestamps.
+- `notion_read_page` fetches one shared page and up to 12,000 characters from paginated direct child blocks. It does not recursively crawl nested pages or download files.
 - Create adds one child page under a selected parent page, with plain text split into bounded paragraph blocks. The action requires explicit app approval.
 - Existing page content cannot be updated or deleted by these tools. A missing, invalid, or unshared page produces the Notion API error instead of a success-shaped response.
+
+Requests use Notion API version `2026-03-11`. Grant only read-content and insert-content capabilities to the integration; do not grant update/delete permissions.

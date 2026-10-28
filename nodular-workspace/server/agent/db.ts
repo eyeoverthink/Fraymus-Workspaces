@@ -26,6 +26,12 @@ create table if not exists oauth_clients(client_id text primary key, user_id tex
 create table if not exists google_connections(user_id text primary key, email text not null, token_cipher text not null, updated_at integer not null);
 create table if not exists google_oauth_states(state_hash text primary key, user_id text not null, verifier_cipher text not null, expires_at integer not null);
 create table if not exists notion_connections(user_id text primary key, workspace_name text not null, bot_name text not null, token_cipher text not null, updated_at integer not null);
+create table if not exists apollo_connections(user_id text primary key, api_key_cipher text not null, acting_user text not null, updated_at integer not null);
+create table if not exists stripe_connections(user_id text primary key, secret_cipher text not null, account_id text not null, account_label text not null, livemode integer not null default 0, updated_at integer not null);
+create table if not exists canva_connections(user_id text primary key, token_cipher text not null, expires_at integer not null, updated_at integer not null);
+create table if not exists canva_oauth_states(state_hash text primary key, user_id text not null, verifier_cipher text not null, expires_at integer not null);
+create table if not exists linkedin_connections(user_id text primary key, token_cipher text not null, person_urn text not null, display_name text, expires_at integer not null, updated_at integer not null);
+create table if not exists linkedin_oauth_states(state_hash text primary key, user_id text not null, expires_at integer not null);
 create table if not exists idea_reports(id text primary key, user_id text not null, audience text not null, report_json text not null, created_at integer not null);
 create index if not exists idx_idea_reports_user on idea_reports(user_id,created_at desc);
 `)

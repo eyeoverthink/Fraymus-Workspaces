@@ -5,7 +5,7 @@ import { registerTools } from './tools'
 import type { Tool } from './tools'
 
 const API = 'https://api.notion.com/v1'
-const VERSION = '2022-06-28'
+const VERSION = '2026-03-11'
 type NotionConnection = { workspace_name: string; bot_name: string; token_cipher: string }
 
 function rowFor(userId: string) {
@@ -19,7 +19,7 @@ function pageId(value: unknown) {
 }
 
 function titleOf(result: any) {
-  if (result.object === 'database') return (result.title || []).map((part: any) => part.plain_text || part.text?.content || '').join('')
+  if (result.object === 'data_source' || result.object === 'database') return (result.title || []).map((part: any) => part.plain_text || part.text?.content || '').join('')
   const properties = Object.values(result.properties || {}) as any[]
   const title = properties.find((property) => property.type === 'title')?.title || []
   return title.map((part: any) => part.plain_text || part.text?.content || '').join('')
@@ -59,6 +59,61 @@ function blocksText(block: any) {
   return value.title || value.url || ''
 }
 
+export async function notionSearch(userId: string, query: string, pageSize = 10) {
+  const search = String(query || '').trim()
+  if (search.length > 200) throw new Error('query must contain 1-200 characters')
+  const size = Math.min(Math.max(Number(pageSize) || 10, 1), 10)
+  return withToken(userId, async (token) => {
+    const result = await notionRequest(token, '/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(search ? { query: search } : {}),
+        page_size: size,
+        sort: { direction: 'descending', timestamp: 'last_edited_time' }
+      })
+    })
+    if (!Array.isArray(result.results)) throw new Error('Notion API returned an invalid search response')
+    return {
+      query: search,
+      results: result.results.map((item: any) => ({
+        id: item.id, type: item.object, title: titleOf(item), url: item.url, lastEditedTime: item.last_edited_time
+      })),
+      hasMore: !!result.has_more
+    }
+  })
+}
+
+export async function notionReadPage(userId: string, pageIdValue: unknown) {
+  const id = pageId(pageIdValue)
+  return withToken(userId, async (token) => {
+    const page = await notionRequest(token, `/pages/${encodeURIComponent(id)}`)
+    if (typeof page.id !== 'string' || page.object !== 'page') throw new Error('Notion API returned an invalid page response')
+    let text = ''
+    let cursor = ''
+    let hasMore = false
+    for (let pageIndex = 0; pageIndex < 5; pageIndex++) {
+      const path = `/blocks/${encodeURIComponent(id)}/children?page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ''}`
+      const children = await notionRequest(token, path)
+      for (const block of children.results || []) {
+        const value = blocksText(block).trim()
+        if (!value) continue
+        const next = `${text}${text ? '\n' : ''}${value}`
+        if (next.length > 12000) {
+          text = next.slice(0, 12000)
+          hasMore = true
+          break
+        }
+        text = next
+      }
+      if (hasMore) break
+      hasMore = !!children.has_more
+      cursor = String(children.next_cursor || '')
+      if (!hasMore || !cursor) break
+    }
+    return { id: page.id, title: titleOf(page), url: page.url, lastEditedTime: page.last_edited_time, content: text, truncated: hasMore }
+  })
+}
+
 const notionTools: Tool[] = [
   {
     name: 'notion_search', risk: 'safe',
@@ -66,42 +121,16 @@ const notionTools: Tool[] = [
     parameters: { type: 'object', properties: { query: { type: 'string', minLength: 1, maxLength: 200 }, pageSize: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['query'] },
     async run(args, ctx) {
       const query = String(args.query || '').trim()
-      if (!query || query.length > 200) throw new Error('query must contain 1-200 characters')
-      const pageSize = Math.min(Math.max(Number(args.pageSize) || 10, 1), 10)
-      return withToken(ctx.userId, async (token) => {
-        const result = await notionRequest(token, '/search', { method: 'POST', body: JSON.stringify({ query, page_size: pageSize, sort: { direction: 'descending', timestamp: 'last_edited_time' } }) })
-        return {
-          query,
-          results: (result.results || []).map((item: any) => ({ id: item.id, type: item.object, title: titleOf(item), url: item.url, lastEditedTime: item.last_edited_time })),
-          hasMore: !!result.has_more
-        }
-      })
+      if (!query) throw new Error('query must contain 1-200 characters')
+      return notionSearch(ctx.userId, query, Number(args.pageSize) || 10)
     }
   },
   {
     name: 'notion_read_page', risk: 'safe',
-    description: 'Read one Notion page shared with the connected integration, returning title and up to 12,000 characters of direct child-block text.',
+    description: 'Read one Notion page shared with the connected integration, returning title and up to 12,000 characters of paginated direct child-block text.',
     parameters: { type: 'object', properties: { pageId: { type: 'string' } }, required: ['pageId'] },
     async run(args, ctx) {
-      const id = pageId(args.pageId)
-      return withToken(ctx.userId, async (token) => {
-        const [page, children] = await Promise.all([
-          notionRequest(token, `/pages/${encodeURIComponent(id)}`),
-          notionRequest(token, `/blocks/${encodeURIComponent(id)}/children?page_size=100`)
-        ])
-        let text = ''
-        for (const block of children.results || []) {
-          const value = blocksText(block).trim()
-          if (!value) continue
-          const next = `${text}${text ? '\n' : ''}${value}`
-          if (next.length > 12000) {
-            text = next.slice(0, 12000)
-            break
-          }
-          text = next
-        }
-        return { id: page.id, title: titleOf(page), url: page.url, lastEditedTime: page.last_edited_time, content: text, truncated: !!children.has_more || text.length >= 12000 }
-      })
+      return notionReadPage(ctx.userId, args.pageId)
     }
   },
   {
@@ -145,15 +174,29 @@ export function notionIntegrationStatus(userId: string) {
     name: 'notion',
     configured: integrationEncryptionConfigured(),
     missing: integrationEncryptionConfigured() ? [] : ['INTEGRATION_ENCRYPTION_KEY (32+ characters)'],
-    connected: !!connection,
+    connected: !!connection && integrationEncryptionConfigured(),
+    credentialStored: !!connection,
     workspace: connection?.workspace_name || null,
     integrationName: connection?.bot_name || null,
-    capabilities: ['Search shared pages', 'Read page text', 'Create an approved child page']
+    capabilities: ['Search shared pages and data sources', 'Read up to 12,000 characters of direct page content', 'Create an approved child page']
   }
 }
 
 export function registerNotionRoutes(app: FastifyInstance) {
   app.get('/api/integrations/notion', async (req) => notionIntegrationStatus((req as any).userId))
+  app.get('/api/integrations/notion/search', async (req, reply) => {
+    try {
+      const query = String((req.query as any)?.query || '')
+      if (!query.trim()) return reply.status(400).send({ error: 'query is required' })
+      return notionSearch((req as any).userId, query)
+    } catch (error) {
+      return reply.status(400).send({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+  app.get('/api/integrations/notion/pages/:id', async (req, reply) => {
+    try { return await notionReadPage((req as any).userId, (req.params as any).id) }
+    catch (error) { return reply.status(400).send({ error: error instanceof Error ? error.message : String(error) }) }
+  })
   app.post('/api/integrations/notion', async (req, reply) => {
     const token = String(((req.body as any) || {}).token || '').trim()
     if (!integrationEncryptionConfigured()) return reply.status(400).send({ error: 'Set INTEGRATION_ENCRYPTION_KEY (at least 32 characters) on the server before connecting Notion' })

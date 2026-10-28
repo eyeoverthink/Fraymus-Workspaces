@@ -20,6 +20,10 @@ import { registerMediaTools } from './agent/media'
 import { registerFleetSkills } from './agent/fleet-skills'
 import { registerGoogleRoutes, registerGoogleTools } from './agent/google'
 import { registerNotionRoutes, registerNotionTools } from './agent/notion'
+import { registerSalesRoutes, registerSalesTools } from './agent/sales'
+import { registerCanvaRoutes, registerCanvaTools } from './agent/canva'
+import { registerLinkedInRoutes, registerLinkedInTools } from './agent/linkedin'
+import { registerTranscriptionRoutes, registerTranscriptionTools } from './agent/transcription'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -38,7 +42,7 @@ async function currentUser(req: any): Promise<string | null> {
 // Every /api route except the deployed run endpoint needs a signed-in user when auth is configured
 fastify.addHook('onRequest', async (req, reply) => {
   const path = req.url.split('?')[0]
-  if (!path.startsWith('/api/') || /^\/api\/workflows\/[^/]+\/run$/.test(path) || path === '/api/integrations/google/callback') return
+  if (!path.startsWith('/api/') || /^\/api\/workflows\/[^/]+\/run$/.test(path) || /^\/api\/integrations\/(?:google|canva|linkedin)\/callback$/.test(path)) return
   const uid = await currentUser(req)
   if (!uid) return reply.status(401).send({ error: 'Sign in required' })
   ;(req as any).userId = uid
@@ -253,11 +257,19 @@ registerMediaTools()
 registerFleetSkills()
 registerGoogleTools()
 registerNotionTools()
+registerSalesTools()
+registerCanvaTools()
+registerLinkedInTools()
+registerTranscriptionTools()
 initAgents(store)
 startScheduler()
 initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))
 registerOAuthRoutes(fastify)
 registerMcpServer(fastify)
+registerSalesRoutes(fastify)
+registerCanvaRoutes(fastify)
+registerLinkedInRoutes(fastify)
+registerTranscriptionRoutes(fastify)
 registerAccessRoutes(fastify)
 registerAgentRoutes(fastify)
 registerGoogleRoutes(fastify)
