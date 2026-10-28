@@ -5,9 +5,11 @@ import LivePreview from './editor/LivePreview'
 import { useWorkflowStore } from './store/useWorkflowStore'
 import { useState } from 'react'
 import { apiFetch, errorText } from './lib/api'
+import AgentsPage from './agents/AgentsPage'
 import { Toasts, toast } from './components/Toasts'
 
 export default function App() {
+  const [view, setView] = useState<'agents' | 'canvas'>('agents')
   const { isRunning, executionLog, deployedUrl, setDeployedUrl } = useWorkflowStore()
   const [showLogs, setShowLogs] = useState(false)
 
@@ -29,9 +31,9 @@ export default function App() {
       toast('error', 'Deploy failed: ' + e.message)
     }
   }
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr 0.6fr', gridTemplateRows: '100vh', background: '#0a0a0a', color: '#e5e5e5' }}>
-      <div style={{ borderRight: '1px solid #222', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+  const canvasView = (
+    <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr 0.6fr', gridTemplateRows: '100%', height: '100%' }}>
+      <div style={{ borderRight: '1px solid #222', display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0e0e0e' }}>
           <div>
             <div style={{ fontWeight: 800, letterSpacing: -0.5, fontSize: 14 }}>NODULAR • FULL</div>
@@ -53,9 +55,24 @@ export default function App() {
         </div>
         {deployedUrl && <div style={{ padding: '8px 12px', background: '#22c55e', color: '#000', fontSize: 10, fontWeight: 700 }}>Deployed: {deployedUrl} - POST with {'{ prompt }'}</div>}
       </div>
-      <Toasts />
       <MonacoWorkspace />
       <LivePreview />
+    </div>
+  )
+
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0a0a', color: '#e5e5e5' }}>
+      <nav style={{ display: 'flex', gap: 4, padding: '6px 12px', borderBottom: '1px solid #222', background: '#0e0e0e' }}>
+        {(['agents', 'canvas'] as const).map((v) => (
+          <button key={v} onClick={() => setView(v)} style={{ fontSize: 12, padding: '4px 14px', borderRadius: 20, border: '1px solid #333', cursor: 'pointer', background: view === v ? '#fff' : '#1a1a1a', color: view === v ? '#000' : '#aaa', fontWeight: 700 }}>
+            {v === 'agents' ? 'Agents' : 'Workflow canvas'}
+          </button>
+        ))}
+      </nav>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {view === 'agents' ? <AgentsPage /> : canvasView}
+      </div>
+      <Toasts />
     </div>
   )
 }

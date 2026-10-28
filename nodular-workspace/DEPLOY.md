@@ -37,3 +37,7 @@ Click **Deploy API**. The key is returned once (and copied to the clipboard):
     curl -X POST $PUBLIC_URL/api/workflows/<id>/run -H "Content-Type: application/json" -H "x-api-key: nk_..." -d '{"prompt":"your idea"}'
 
 Each run costs one credit (`FREE_CREDITS` per user). With Stripe configured, successful runs are also reported to the meter named by `STRIPE_METER_EVENT_NAME`.
+
+## Agents on your VPS
+
+Run Ollama on a VPS (`ollama serve`, pull a model with tool support), set `OLLAMA_HOST` (and `OLLAMA_BASIC_AUTH` if behind a proxy), optionally `GROQ_API_KEY` as fallback. Mount a persistent volume at `DATA_DIR` so `agent.db` survives restarts. `config/` ships in the image.

@@ -10,6 +10,8 @@ import { createStore } from './store'
 import { runPipeline, outputsDir } from './pipeline'
 import { authenticateClerk } from './lib/clerk'
 import { reportRunUsage, createCheckout } from './billing'
+import { registerAgentRoutes } from './agent/routes'
+import { initAgents } from './agent/runtime'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -236,6 +238,9 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
     return reply.status(400).send({ error: e.message })
   }
 })
+
+initAgents(store)
+registerAgentRoutes(fastify)
 
 // Serve the built frontend when present (production / Docker)
 if (existsSync('./dist/index.html')) {

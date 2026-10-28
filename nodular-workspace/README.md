@@ -54,3 +54,15 @@ See DEPLOY.md for Docker/Fly/Railway and env vars (.env.example).
 Verified: server pipeline, deploy + API-key runs, SQLite persistence, credits, local background removal, UI build.
 Written but untested without your accounts: Supabase store, Clerk auth, Stripe metering/checkout (no webhook), Replicate Real-ESRGAN (sharp lanczos3 is used otherwise), Docker build.
 
+
+## Agents
+
+Open the **Agents** tab: chat with Concierge or any of the 14 specialists in `config/agents.json`.
+Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, HTTP tools) show an **Approve / Reject** card.
+
+- **Models**: `LLM_PROVIDERS` order (Ollama -> Groq -> OpenAI-compatible). Point `OLLAMA_HOST` at your VPS. With nothing configured, a clearly labeled offline mock answers (a banner is shown).
+- **Edit agents**: change prompts, `model` hints (`provider[:model]`) and tool allowlists in `config/agents.json`. Users can also create their own agents via `POST /api/agents`.
+- **HTTP tools**: `config/http-tools.json` defines tools backed by your own services (Fraynix engine, Hermes, TTS). **These endpoint paths and body shapes are templates I guessed; adapt them to your real APIs.** A tool is skipped until every `${ENV:NAME}` it references is set.
+- **Data**: threads, memories and approvals live in `DATA_DIR/agent.db` (local SQLite).
+- **Safety**: `http_get` blocks private/loopback addresses (SSRF) unless `ALLOW_PRIVATE_FETCH=1`; delegated agents cannot run approval tools.
+- **Tests**: `node scripts/test-agent.mjs` (server with `LLM_PROVIDERS=none`).

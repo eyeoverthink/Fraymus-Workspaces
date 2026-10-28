@@ -1,0 +1,40 @@
+[
+  {
+    "name": "fraynix_engine",
+    "description": "Send a command to the self-hosted Fraynix engine on the VPS and return its response.",
+    "risk": "approval",
+    "method": "POST",
+    "url": "${ENV:FRAYNIX_ENGINE_URL}/command",
+    "headers": { "Authorization": "Bearer ${ENV:FRAYNIX_ENGINE_TOKEN}" },
+    "parameters": {
+      "type": "object",
+      "properties": { "command": { "type": "string" } },
+      "required": ["command"]
+    }
+  },
+  {
+    "name": "hermes_run",
+    "description": "Run a Hermes fleet skill or agent on the VPS.",
+    "risk": "approval",
+    "method": "POST",
+    "url": "${ENV:HERMES_URL}/agent/run",
+    "headers": { "Authorization": "Bearer ${ENV:HERMES_TOKEN}" },
+    "parameters": {
+      "type": "object",
+      "properties": { "skill": { "type": "string" }, "input": { "type": "string" } },
+      "required": ["skill", "input"]
+    }
+  },
+  {
+    "name": "speak",
+    "description": "Turn text into speech through the self-hosted TTS service. Returns an audio URL.",
+    "risk": "safe",
+    "method": "POST",
+    "url": "${ENV:TTS_URL}/speak",
+    "parameters": {
+      "type": "object",
+      "properties": { "text": { "type": "string" } },
+      "required": ["text"]
+    }
+  }
+]
