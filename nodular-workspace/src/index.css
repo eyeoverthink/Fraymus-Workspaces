@@ -1,0 +1,3 @@
+@import '@xyflow/react/dist/style.css';
+*{box-sizing:border-box} body{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color:#e5e5e5}
+.react-flow__node{border-radius:12px}
