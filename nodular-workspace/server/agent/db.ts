@@ -25,6 +25,9 @@ create table if not exists access_tokens(id text primary key, user_id text not n
 create table if not exists oauth_clients(client_id text primary key, user_id text not null, name text, secret_hash text not null, scopes text not null, created_at integer);
 create table if not exists google_connections(user_id text primary key, email text not null, token_cipher text not null, updated_at integer not null);
 create table if not exists google_oauth_states(state_hash text primary key, user_id text not null, verifier_cipher text not null, expires_at integer not null);
+create table if not exists notion_connections(user_id text primary key, workspace_name text not null, bot_name text not null, token_cipher text not null, updated_at integer not null);
+create table if not exists idea_reports(id text primary key, user_id text not null, audience text not null, report_json text not null, created_at integer not null);
+create index if not exists idx_idea_reports_user on idea_reports(user_id,created_at desc);
 `)
 
 export const now = () => Date.now()

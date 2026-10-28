@@ -32,7 +32,7 @@ const run = (file) => new Promise((res) => spawn(process.execPath, [file], { env
 let failed = 0
 try {
   await ready()
-  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-google.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-time-audit.mjs']) {
+  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-google.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-time-audit.mjs', 'scripts/test-idea-finder.mjs']) {
     console.log(`\n== ${f}`)
     if (await run(f)) failed++
   }

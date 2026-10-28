@@ -1,8 +1,9 @@
-import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { db, now } from './db'
 import { registerTools } from './tools'
 import type { Tool } from './tools'
+import { integrationEncryptionConfigured, openIntegrationSecret, sealIntegrationSecret } from './integration-secrets'
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token'
@@ -16,24 +17,6 @@ const SCOPES = [
 ]
 
 type GoogleTokens = { access_token: string; refresh_token?: string; expires_at: number }
-const key = () => {
-  const secret = process.env.INTEGRATION_ENCRYPTION_KEY || ''
-  if (secret.length < 32) throw new Error('INTEGRATION_ENCRYPTION_KEY must be at least 32 characters')
-  return createHash('sha256').update(secret).digest()
-}
-const seal = (value: string) => {
-  const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', key(), iv)
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
-  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64url')
-}
-const unseal = (value: string) => {
-  const data = Buffer.from(value, 'base64url')
-  if (data.length < 29) throw new Error('invalid encrypted integration data')
-  const decipher = createDecipheriv('aes-256-gcm', key(), data.subarray(0, 12))
-  decipher.setAuthTag(data.subarray(12, 28))
-  return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8')
-}
 
 const clientId = () => process.env.GOOGLE_CLIENT_ID || ''
 const clientSecret = () => process.env.GOOGLE_CLIENT_SECRET || ''
@@ -41,7 +24,7 @@ export function googleConfiguration() {
   const missing = [
     !clientId() && 'GOOGLE_CLIENT_ID',
     !clientSecret() && 'GOOGLE_CLIENT_SECRET',
-    (process.env.INTEGRATION_ENCRYPTION_KEY || '').length < 32 && 'INTEGRATION_ENCRYPTION_KEY (32+ characters)'
+    !integrationEncryptionConfigured() && 'INTEGRATION_ENCRYPTION_KEY (32+ characters)'
   ].filter(Boolean) as string[]
   return { configured: missing.length === 0, missing }
 }
@@ -74,7 +57,7 @@ function connection(userId: string) {
 async function tokensFor(userId: string): Promise<GoogleTokens> {
   const row = connection(userId)
   if (!row) throw new Error('Connect a Google account in Connect settings first')
-  const tokens = JSON.parse(unseal(row.token_cipher)) as GoogleTokens
+  const tokens = JSON.parse(openIntegrationSecret(row.token_cipher)) as GoogleTokens
   if (tokens.expires_at > now() + 60_000) return tokens
   if (!tokens.refresh_token) throw new Error('Google connection expired; reconnect the account')
   const response = await fetch(GOOGLE_TOKEN, {
@@ -93,7 +76,7 @@ async function tokensFor(userId: string): Promise<GoogleTokens> {
     refresh_token: tokens.refresh_token,
     expires_at: now() + Number(refreshed.expires_in || 3600) * 1000
   }
-  db.prepare('update google_connections set token_cipher=?,updated_at=? where user_id=?').run(seal(JSON.stringify(next)), now(), userId)
+  db.prepare('update google_connections set token_cipher=?,updated_at=? where user_id=?').run(sealIntegrationSecret(JSON.stringify(next)), now(), userId)
   return next
 }
 
@@ -248,7 +231,7 @@ export function registerGoogleRoutes(app: FastifyInstance) {
       const challenge = createHash('sha256').update(verifier).digest('base64url')
       db.prepare('delete from google_oauth_states where expires_at<?').run(now())
       db.prepare('insert into google_oauth_states(state_hash,user_id,verifier_cipher,expires_at) values(?,?,?,?)')
-        .run(createHash('sha256').update(state).digest('hex'), (req as any).userId, seal(verifier), now() + 10 * 60_000)
+        .run(createHash('sha256').update(state).digest('hex'), (req as any).userId, sealIntegrationSecret(verifier), now() + 10 * 60_000)
       const url = new URL(GOOGLE_AUTH)
       url.search = new URLSearchParams({
         client_id: clientId(),
@@ -289,7 +272,7 @@ export function registerGoogleRoutes(app: FastifyInstance) {
           client_secret: clientSecret(),
           redirect_uri: googleRedirectUri(req),
           grant_type: 'authorization_code',
-          code_verifier: unseal(row.verifier_cipher)
+          code_verifier: openIntegrationSecret(row.verifier_cipher)
         }),
         signal: AbortSignal.timeout(15000)
       })
@@ -302,7 +285,7 @@ export function registerGoogleRoutes(app: FastifyInstance) {
       if (!profile.emailAddress) throw new Error('Google did not return a Gmail address')
       const tokens: GoogleTokens = { access_token: String(received.access_token), refresh_token: String(received.refresh_token), expires_at: now() + Number(received.expires_in || 3600) * 1000 }
       db.prepare('insert into google_connections(user_id,email,token_cipher,updated_at) values(?,?,?,?) on conflict(user_id) do update set email=excluded.email,token_cipher=excluded.token_cipher,updated_at=excluded.updated_at')
-        .run(row.user_id, String(profile.emailAddress), seal(JSON.stringify(tokens)), now())
+        .run(row.user_id, String(profile.emailAddress), sealIntegrationSecret(JSON.stringify(tokens)), now())
       return reply.redirect(`${requestOrigin(req)}/?view=connect&google=connected`)
     } catch (error) {
       console.error('[google] OAuth callback failed:', error instanceof Error ? error.message : String(error))
@@ -316,7 +299,7 @@ export function registerGoogleRoutes(app: FastifyInstance) {
     if (!row) return { ok: true, disconnected: false }
     db.prepare('delete from google_connections where user_id=?').run(userId)
     let tokens: GoogleTokens
-    try { tokens = JSON.parse(unseal(row.token_cipher)) as GoogleTokens }
+    try { tokens = JSON.parse(openIntegrationSecret(row.token_cipher)) as GoogleTokens }
     catch { return { ok: true, disconnected: true, warning: 'Local tokens were removed, but Google revocation could not be completed. Revoke Nodular access in Google Account settings.' } }
     try {
       const response = await fetch('https://oauth2.googleapis.com/revoke', {

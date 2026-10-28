@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { db, now } from './db'
 import { listActionLog } from './audit'
 import { listTimeAuditEntries } from './time-audit'
+import { buildIdeaReport } from './idea-finder'
 import { runFlux, runRemover, runUpscaler } from '../services'
 import { saveImage, outputsDir, runPipeline } from '../pipeline'
 import type { Store } from '../store'
@@ -100,6 +101,12 @@ export const builtinTools: Tool[] = [
     name: 'time_audit_search', risk: 'safe', description: 'Read the user-entered time-audit blocks and summary for an ISO date range; no activity is monitored automatically.',
     parameters: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } },
     async run(a, c) { return listTimeAuditEntries(c.userId, a.from ? String(a.from) : undefined, a.to ? String(a.to) : undefined) }
+  },
+  {
+    name: 'idea_finder_report', risk: 'safe',
+    description: 'Generate three testable business hypotheses using the user’s manually logged time audit and a specified audience. Not a revenue forecast or market validation.',
+    parameters: { type: 'object', properties: { audience: { type: 'string', minLength: 1, maxLength: 120 }, pain: { type: 'string', maxLength: 300 } }, required: ['audience'] },
+    async run(a, c) { return buildIdeaReport(c.userId, { audience: String(a.audience || ''), pain: a.pain ? String(a.pain) : undefined }) }
   },
   {
     name: 'web_search', risk: 'safe', description: 'Search the web. Returns titles, URLs and snippets.',

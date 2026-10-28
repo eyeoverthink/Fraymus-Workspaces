@@ -10,10 +10,11 @@ import ConnectPage from './agents/ConnectPage'
 import AutomationsPage from './agents/AutomationsPage'
 import ActionLogPage from './agents/ActionLogPage'
 import TimeAuditPage from './agents/TimeAuditPage'
+import IdeaFinderPage from './agents/IdeaFinderPage'
 import { Toasts, toast } from './components/Toasts'
 
 export default function App() {
-  const [view, setView] = useState<'agents' | 'canvas' | 'connect' | 'automations' | 'action-log' | 'time-audit'>(() =>
+  const [view, setView] = useState<'agents' | 'canvas' | 'connect' | 'automations' | 'action-log' | 'time-audit' | 'idea-finder'>(() =>
     new URLSearchParams(window.location.search).get('view') === 'connect' ? 'connect' : 'agents')
   const { isRunning, executionLog, deployedUrl, setDeployedUrl } = useWorkflowStore()
   const [showLogs, setShowLogs] = useState(false)
@@ -68,14 +69,14 @@ export default function App() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0a0a', color: '#e5e5e5' }}>
       <nav style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '6px 12px', borderBottom: '1px solid #222', background: '#0e0e0e' }}>
-        {(['agents', 'canvas', 'automations', 'time-audit', 'action-log', 'connect'] as const).map((v) => (
+        {(['agents', 'canvas', 'automations', 'time-audit', 'idea-finder', 'action-log', 'connect'] as const).map((v) => (
           <button key={v} onClick={() => setView(v)} style={{ fontSize: 12, padding: '4px 14px', borderRadius: 20, border: '1px solid #333', cursor: 'pointer', background: view === v ? '#fff' : '#1a1a1a', color: view === v ? '#000' : '#aaa', fontWeight: 700 }}>
-            {v === 'agents' ? 'Agents' : v === 'connect' ? 'Connect' : v === 'automations' ? 'Automations' : v === 'action-log' ? 'Action log' : v === 'time-audit' ? 'Time audit' : 'Workflow canvas'}
+            {v === 'agents' ? 'Agents' : v === 'connect' ? 'Connect' : v === 'automations' ? 'Automations' : v === 'action-log' ? 'Action log' : v === 'time-audit' ? 'Time audit' : v === 'idea-finder' ? 'Idea Finder' : 'Workflow canvas'}
           </button>
         ))}
       </nav>
       <div style={{ flex: 1, minHeight: 0 }}>
-        {view === 'agents' ? <AgentsPage /> : view === 'connect' ? <ConnectPage /> : view === 'automations' ? <AutomationsPage /> : view === 'action-log' ? <ActionLogPage /> : view === 'time-audit' ? <TimeAuditPage /> : canvasView}
+        {view === 'agents' ? <AgentsPage /> : view === 'connect' ? <ConnectPage /> : view === 'automations' ? <AutomationsPage /> : view === 'action-log' ? <ActionLogPage /> : view === 'time-audit' ? <TimeAuditPage onFindIdeas={() => setView('idea-finder')} /> : view === 'idea-finder' ? <IdeaFinderPage /> : canvasView}
       </div>
       <Toasts />
     </div>

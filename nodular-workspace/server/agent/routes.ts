@@ -7,9 +7,11 @@ import { mcpStatus, mcpServers, importServers, removeServer } from './mcp'
 import { listActionLog } from './audit'
 import { listTimeAuditEntries, saveTimeAuditEntry } from './time-audit'
 import {
-  listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
+  listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory, callToolDirect
 } from './runtime'
 import { googleIntegrationStatus } from './google'
+import { notionIntegrationStatus } from './notion'
+import { buildIdeaReport, listIdeaReports, saveIdeaReport, type IdeaReport } from './idea-finder'
 
 const fail = (reply: any, e: any, code = 400) => reply.status(code).send({ error: e.message || String(e) })
 
@@ -22,7 +24,7 @@ export function registerAgentRoutes(app: FastifyInstance) {
   }))
 
   app.get('/api/integrations', async (req) => ({
-    integrations: [googleIntegrationStatus((req as any).userId, req)]
+    integrations: [googleIntegrationStatus((req as any).userId, req), notionIntegrationStatus((req as any).userId)]
   }))
 
   app.get('/api/skills', async () => listSkills(allTools(), mcpStatus()))
@@ -103,5 +105,28 @@ export function registerAgentRoutes(app: FastifyInstance) {
   })
   app.put('/api/time-audit/:id', async (req, reply) => {
     try { return saveTimeAuditEntry((req as any).userId, req.body as any, Number((req.params as any).id)) } catch (e) { return fail(reply, e) }
+  })
+  app.get('/api/idea-finder', async (req) => ({ reports: listIdeaReports((req as any).userId) }))
+  app.post('/api/idea-finder', async (req, reply) => {
+    try {
+      const body = (req.body || {}) as any
+      const userId = (req as any).userId as string
+      const report: IdeaReport = buildIdeaReport(userId, { audience: String(body.audience || ''), pain: body.pain ? String(body.pain) : undefined })
+      if (body.includeResearch === true) {
+        const query = `${report.audience} problems ${report.evidence.focus.pain}`
+          .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+          .replace(/\b(?:\+?\d[\d\s().-]{7,}\d)\b/g, '[phone]')
+          .replace(/https?:\/\/\S+/gi, '[link]')
+          .slice(0, 240)
+        try {
+          report.research = { status: 'complete', query, result: JSON.parse(await callToolDirect(userId, 'web_search', { query })) }
+        } catch (error) {
+          report.research = { status: 'failed', query, error: error instanceof Error ? error.message : String(error) }
+        }
+      } else {
+        report.research = { status: 'not_requested' }
+      }
+      return saveIdeaReport(userId, report)
+    } catch (e) { return fail(reply, e) }
   })
 }

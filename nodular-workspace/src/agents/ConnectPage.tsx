@@ -138,6 +138,57 @@ function GoogleAccount() {
   )
 }
 
+function NotionAccount() {
+  const [data, setData] = useState<any>(null)
+  const [secret, setSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+  const load = useCallback(() => call('/api/integrations/notion').then(setData).catch((e) => toast('error', e.message)), [])
+  useEffect(() => { load() }, [load])
+
+  const connect = async () => {
+    setBusy(true)
+    try {
+      const result = await call('/api/integrations/notion', { method: 'POST', ...j({ token: secret }) })
+      setSecret('')
+      setData(result)
+      toast('success', `Connected ${result.integrationName || 'Notion integration'}`)
+    } catch (e: any) { toast('error', e.message) }
+    finally { setBusy(false) }
+  }
+  const disconnect = async () => {
+    setBusy(true)
+    try {
+      const result = await call('/api/integrations/notion', { method: 'DELETE' })
+      setData((current: any) => ({ ...current, connected: false, workspace: null, integrationName: null }))
+      toast('success', result.note || 'Notion disconnected')
+    } catch (e: any) { toast('error', e.message) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div style={card}>
+      <h3 style={{ margin: '0 0 8px' }}>Notion</h3>
+      <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
+        Status: <b style={{ color: data?.connected ? '#22c55e' : data?.configured ? '#fbbf24' : '#888' }}>
+          {data?.connected ? `Connected to ${data.workspace}` : data?.configured ? 'Not connected' : 'Encryption setup required'}
+        </b>{data?.connected && ` · ${data.integrationName}`}
+      </div>
+      <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
+        Search and read pages shared with the integration. Page creation is available only as an approved child of a page you select. Existing pages are never edited or deleted.
+      </div>
+      {!data?.configured && <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 8 }}>Set <code>INTEGRATION_ENCRYPTION_KEY</code> (32+ characters) on the server before adding a token.</div>}
+      {!data?.connected ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input style={{ ...input, minWidth: 250 }} type="password" autoComplete="new-password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Notion internal integration secret" disabled={busy || !data?.configured} />
+          <button style={btn} onClick={connect} disabled={busy || !data?.configured || !secret.trim()}>{busy ? 'Validating…' : 'Connect Notion'}</button>
+          <a style={{ ...btn, textDecoration: 'none' }} href="https://www.notion.so/profile/integrations" target="_blank" rel="noreferrer">Create / manage integration</a>
+        </div>
+      ) : <button style={btn} disabled={busy} onClick={disconnect}>{busy ? 'Disconnecting…' : 'Disconnect Notion'}</button>}
+      <div style={{ fontSize: 11, color: '#777', marginTop: 8 }}>Share individual Notion pages with the integration. The token is validated, encrypted at rest, and never returned to the browser. Revoke it in Notion to remove provider access.</div>
+    </div>
+  )
+}
+
 function Servers() {
   const [list, setList] = useState<any[]>([])
   const [text, setText] = useState('{\n  "mcpServers": {\n    "example": { "url": "http://127.0.0.1:3900/mcp/" }\n  }\n}')
@@ -223,6 +274,7 @@ export default function ConnectPage() {
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: 16, maxWidth: 900, margin: '0 auto' }}>
       <GoogleAccount />
+      <NotionAccount />
       <Access />
       <Servers />
       <Manifests />

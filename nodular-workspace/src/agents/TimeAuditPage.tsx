@@ -19,7 +19,7 @@ const input = { background: '#0a0a0a', color: '#e5e5e5', border: '1px solid #333
 const button = { background: '#1a1a1a', color: '#eee', border: '1px solid #333', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 11 }
 const json = (body: unknown) => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 
-export default function TimeAuditPage() {
+export default function TimeAuditPage({ onFindIdeas }: { onFindIdeas?: () => void }) {
   const [entries, setEntries] = useState<Entry[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [form, setForm] = useState<Form>(newForm())
@@ -64,7 +64,7 @@ export default function TimeAuditPage() {
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: 18, boxSizing: 'border-box' }}>
       <div style={{ maxWidth: 1050, margin: '0 auto' }}>
-        <h2 style={{ margin: '0 0 5px' }}>Two-day time audit</h2>
+        <h2 style={{ margin: '0 0 5px' }}>Weekend time audit</h2>
         <div style={{ color: '#999', fontSize: 12, marginBottom: 14 }}>
           Log each 30-minute block yourself: activity, energy (1–10), estimated business value, and what you complained about. This page does not monitor your device.
         </div>
@@ -86,7 +86,10 @@ export default function TimeAuditPage() {
         <section style={panel}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <h3 style={{ margin: 0 }}>Last 48 hours</h3>
-            <button style={button} onClick={() => void load()} disabled={loading}>Refresh</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={button} onClick={() => void load()} disabled={loading}>Refresh</button>
+              <button style={button} onClick={onFindIdeas}>Find business ideas from this audit</button>
+            </div>
           </div>
           {summary && <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', color: '#aaa', fontSize: 12, margin: '12px 0' }}>
             <span>{summary.slots} blocks · {summary.trackedMinutes / 60} hours tracked</span>

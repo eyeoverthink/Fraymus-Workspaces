@@ -19,6 +19,7 @@ import { registerMcpServer } from './agent/mcp-server'
 import { registerMediaTools } from './agent/media'
 import { registerFleetSkills } from './agent/fleet-skills'
 import { registerGoogleRoutes, registerGoogleTools } from './agent/google'
+import { registerNotionRoutes, registerNotionTools } from './agent/notion'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -251,6 +252,7 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
 registerMediaTools()
 registerFleetSkills()
 registerGoogleTools()
+registerNotionTools()
 initAgents(store)
 startScheduler()
 initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))
@@ -259,6 +261,7 @@ registerMcpServer(fastify)
 registerAccessRoutes(fastify)
 registerAgentRoutes(fastify)
 registerGoogleRoutes(fastify)
+registerNotionRoutes(fastify)
 
 // Serve the built frontend when present (production / Docker)
 if (existsSync('./dist/index.html')) {
