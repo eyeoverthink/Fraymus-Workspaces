@@ -5,13 +5,14 @@ import { listSkills } from './skills'
 import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns, installTemplate, TEMPLATES } from './automations'
 import { mcpStatus, mcpServers, importServers, removeServer } from './mcp'
 import { listActionLog } from './audit'
-import { listTimeAuditEntries, saveTimeAuditEntry } from './time-audit'
+import { listTimeAuditEntries, saveTimeAuditEntry, listWeekendTasks, startWeekend, saveWeekendTask, deleteWeekendTask } from './time-audit'
 import {
-  listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory, callToolDirect
+  listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
 } from './runtime'
 import { googleIntegrationStatus } from './google'
 import { notionIntegrationStatus } from './notion'
-import { buildIdeaReport, listIdeaReports, saveIdeaReport, type IdeaReport } from './idea-finder'
+import { listIdeaReports } from './idea-finder'
+import { describeIdeaImage, generateLabReport, getLabSettings, saveLabSettings, listIdeaReviews, saveIdeaReview, listTrendScans, scanTrends, TREND_TOPICS } from './idea-lab'
 import { salesIntegrationStatus } from './sales'
 import { canvaIntegrationStatus } from './canva'
 import { linkedinIntegrationStatus } from './linkedin'
@@ -111,6 +112,21 @@ export function registerAgentRoutes(app: FastifyInstance) {
       return listTimeAuditEntries((req as any).userId, query.from ? String(query.from) : undefined, query.to ? String(query.to) : undefined)
     } catch (e) { return fail(reply, e) }
   })
+  app.get('/api/time-audit/weekend/:weekend', async (req, reply) => {
+    try { return listWeekendTasks((req as any).userId, (req.params as any).weekend) } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/time-audit/weekend/:weekend/start', async (req, reply) => {
+    try { return startWeekend((req as any).userId, (req.params as any).weekend) } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/time-audit/weekend/:weekend/tasks', async (req, reply) => {
+    try { return saveWeekendTask((req as any).userId, (req.params as any).weekend, req.body as any) } catch (e) { return fail(reply, e) }
+  })
+  app.put('/api/time-audit/weekend/:weekend/tasks/:id', async (req, reply) => {
+    try { return saveWeekendTask((req as any).userId, (req.params as any).weekend, req.body as any, (req.params as any).id) } catch (e) { return fail(reply, e) }
+  })
+  app.delete('/api/time-audit/weekend/:weekend/tasks/:id', async (req, reply) => {
+    try { return deleteWeekendTask((req as any).userId, (req.params as any).weekend, (req.params as any).id) } catch (e) { return fail(reply, e) }
+  })
   app.post('/api/time-audit', async (req, reply) => {
     try { return saveTimeAuditEntry((req as any).userId, req.body as any) } catch (e) { return fail(reply, e) }
   })
@@ -118,26 +134,34 @@ export function registerAgentRoutes(app: FastifyInstance) {
     try { return saveTimeAuditEntry((req as any).userId, req.body as any, Number((req.params as any).id)) } catch (e) { return fail(reply, e) }
   })
   app.get('/api/idea-finder', async (req) => ({ reports: listIdeaReports((req as any).userId) }))
+  app.get('/api/idea-finder/lab', async (req) => {
+    const userId = (req as any).userId
+    return { settings: getLabSettings(userId), reviews: listIdeaReviews(userId), scans: listTrendScans(userId), topics: TREND_TOPICS }
+  })
+  app.put('/api/idea-finder/settings', async (req, reply) => {
+    try { return saveLabSettings((req as any).userId, req.body) } catch (e) { return fail(reply, e) }
+  })
+  app.put('/api/idea-finder/:id/reviews/:index', async (req, reply) => {
+    try { return saveIdeaReview((req as any).userId, (req.params as any).id, Number((req.params as any).index), req.body) } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/idea-finder/trends', async (req, reply) => {
+    try { return await scanTrends((req as any).userId) } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/idea-finder/image', async (req, reply) => {
+    try {
+      if (!req.isMultipart()) throw new Error('Upload an image using multipart/form-data')
+      const file = await req.file({ limits: { fileSize: 8 * 1024 * 1024 } })
+      if (!file) throw new Error('Select a PNG, JPEG or WebP image')
+      // Upload itself is local. A separate affirmative field is required before any model sees image bytes.
+      if (String((file.fields.analyze as { value?: string } | undefined)?.value) !== 'true') {
+        throw new Error('Explicit image-analysis consent is required; you can describe the image manually instead')
+      }
+      return await describeIdeaImage(await file.toBuffer())
+    } catch (e) { return fail(reply, e) }
+  })
   app.post('/api/idea-finder', async (req, reply) => {
     try {
-      const body = (req.body || {}) as any
-      const userId = (req as any).userId as string
-      const report: IdeaReport = buildIdeaReport(userId, { audience: String(body.audience || ''), pain: body.pain ? String(body.pain) : undefined })
-      if (body.includeResearch === true) {
-        const query = `${report.audience} problems ${report.evidence.focus.pain}`
-          .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
-          .replace(/\b(?:\+?\d[\d\s().-]{7,}\d)\b/g, '[phone]')
-          .replace(/https?:\/\/\S+/gi, '[link]')
-          .slice(0, 240)
-        try {
-          report.research = { status: 'complete', query, result: JSON.parse(await callToolDirect(userId, 'web_search', { query })) }
-        } catch (error) {
-          report.research = { status: 'failed', query, error: error instanceof Error ? error.message : String(error) }
-        }
-      } else {
-        report.research = { status: 'not_requested' }
-      }
-      return saveIdeaReport(userId, report)
+      return await generateLabReport((req as any).userId, req.body)
     } catch (e) { return fail(reply, e) }
   })
 }

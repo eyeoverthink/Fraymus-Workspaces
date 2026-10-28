@@ -8,7 +8,8 @@ import { listSkills } from './skills'
 import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns } from './automations'
 import { importServers, mcpServers, removeServer } from './mcp'
 import { callToolDirect, getAgent, getThread, listActionLog, listAgents, listThreads, resetAgentManifest, runAgentAndWait, saveAgentManifest } from './runtime'
-import { listTimeAuditEntries, saveTimeAuditEntry } from './time-audit'
+import { listTimeAuditEntries, saveTimeAuditEntry, listWeekendTasks, saveWeekendTask, startWeekend } from './time-audit'
+import { getLabSettings, listIdeaReviews, listTrendScans } from './idea-lab'
 
 const out = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] })
 const issuer = (req: any) => process.env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`
@@ -44,6 +45,14 @@ function buildServer(p: Principal) {
     ({ agentId, limit }) => listActionLog(uid, agentId, limit))
   def('list_time_audit', 'read', 'Read the user’s time-audit entries and summary for an ISO date range (defaults to the most recent 48 hours).', { from: z.string().optional(), to: z.string().optional() },
     ({ from, to }) => listTimeAuditEntries(uid, from, to))
+  def('get_idea_lab', 'read', 'Read the user-scoped creative mission, aspirational revenue goal, human reviews and trend snapshots. Does not search externally.', {},
+    () => ({ settings: getLabSettings(uid), reviews: listIdeaReviews(uid), scans: listTrendScans(uid) }))
+  def('list_weekend_checklist', 'read', 'Read the saved checklist for a Saturday YYYY-MM-DD.', { weekend: z.string() },
+    ({ weekend }) => listWeekendTasks(uid, weekend))
+  def('start_weekend_checklist', 'admin', 'Install the six weekend-exercise tasks without resetting existing progress.', { weekend: z.string() },
+    ({ weekend }) => startWeekend(uid, weekend))
+  def('save_weekend_task', 'admin', 'Create or update one user-scoped weekend checklist task.', { weekend: z.string(), id: z.string().optional(), title: z.string().max(240), done: z.boolean().optional(), notes: z.string().max(2000).optional() },
+    ({ weekend, id, ...task }) => saveWeekendTask(uid, weekend, task, id))
   def('log_time_audit', 'admin', 'Create or update a 30-minute time-audit entry. This writes only the signed-in user’s Nodular database; it does not monitor activity.', { id: z.number().int().positive().optional(), startedAt: z.union([z.string(), z.number()]), activity: z.string(), energy: z.number().int().min(1).max(10), valueUsd: z.number().min(0).max(1000000), complaint: z.string().optional() },
     ({ id, ...entry }) => saveTimeAuditEntry(uid, entry, id))
   def('get_thread', 'read', 'Get a conversation: messages, run status, pending approvals.', { id: z.string(), lastMessages: z.number().min(1).max(200).optional() },

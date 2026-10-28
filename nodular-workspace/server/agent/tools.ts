@@ -56,7 +56,7 @@ async function loadImage(url: string): Promise<Buffer> {
 const clip = (s: string, n = 8000) => (s.length > n ? s.slice(0, n) + '…[truncated]' : s)
 const stripHtml = (h: string) => h.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
 
-async function webSearch(query: string) {
+export async function webSearch(query: string) {
   if (process.env.SEARXNG_URL) {
     const r = await safeFetch(`${process.env.SEARXNG_URL.replace(/\/$/, '')}/search?format=json&q=${encodeURIComponent(query)}`)
     if (!r.ok) throw new Error(`searxng ${r.status}`)
@@ -107,6 +107,49 @@ export const builtinTools: Tool[] = [
     description: 'Generate three testable business hypotheses using the user’s manually logged time audit and a specified audience. Not a revenue forecast or market validation.',
     parameters: { type: 'object', properties: { audience: { type: 'string', minLength: 1, maxLength: 120 }, pain: { type: 'string', maxLength: 300 } }, required: ['audience'] },
     async run(a, c) { return buildIdeaReport(c.userId, { audience: String(a.audience || ''), pain: a.pain ? String(a.pain) : undefined }) }
+  },
+  {
+    name: 'idea_lab_save_draft', risk: 'safe',
+    description: 'Save agent-authored business hypotheses locally for human creativity review in Idea Finder. No external request. Each idea needs title, format, problem, evidence, twelveHourMvp, validation, risks and sourceIds from idea_lab_context sources (or [] for user/audit-only hypotheses). A revenue goal is not validation.',
+    parameters: { type: 'object', properties: {
+      audience: { type: 'string', maxLength: 120 }, pain: { type: 'string', maxLength: 300 },
+      ideas: { type: 'array', minItems: 1, maxItems: 10, items: { type: 'object', properties: {
+        title: { type: 'string' }, format: { type: 'string' }, problem: { type: 'string' }, evidence: { type: 'string' },
+        twelveHourMvp: { type: 'string' }, validation: { type: 'string' }, risks: { type: 'array', items: { type: 'string' } },
+        sourceIds: { type: 'array', items: { type: 'string' } }
+      }, required: ['title', 'format', 'problem', 'evidence', 'twelveHourMvp', 'validation', 'risks', 'sourceIds'] } }
+    }, required: ['audience', 'pain', 'ideas'] },
+    async run(a, c) { return (await import('./idea-lab')).saveAgentIdeaDraft(c.userId, a) }
+  },
+  {
+    name: 'idea_lab_research', risk: 'approval',
+    description: 'Combine pasted notes, public business/GitHub/Instagram links, D-U-N-S context and image descriptions into 3 or 10 saved business ideas. Optional fetchSources, includeResearch, includeYoutube and useAi send data externally; requires app approval. Instagram and proprietary D&B content must be pasted by the user. No publishing or spending.',
+    parameters: { type: 'object', properties: {
+      audience: { type: 'string', maxLength: 120 }, pain: { type: 'string', maxLength: 300 },
+      query: { type: 'string', maxLength: 1000 }, notes: { type: 'string', maxLength: 12000 },
+      urls: { type: 'array', maxItems: 5, items: { type: 'string' } }, duns: { type: 'string' },
+      imageDescription: { type: 'string', maxLength: 4000 }, fetchSources: { type: 'boolean' },
+      includeResearch: { type: 'boolean' }, includeYoutube: { type: 'boolean' }, useAi: { type: 'boolean' }, count: { type: 'integer', enum: [3, 10] }
+    }, required: ['audience'] },
+    async run(a, c) { return (await import('./idea-lab')).generateLabReport(c.userId, a) }
+  },
+  {
+    name: 'ai_trend_scan', risk: 'safe',
+    description: 'Search public YouTube metadata and web results for the user-selected, predefined AI trend topics and save a dated radar snapshot. No private notes or custom queries are transmitted. No proof of income, fact-checking, video watching, or exhaustive trend prediction is claimed.',
+    parameters: { type: 'object', properties: {} },
+    async run(_a, c) {
+      const scan = await (await import('./idea-lab')).scanTrends(c.userId)
+      if (!scan.videos.length && !scan.links.length) throw new Error(`Trend scan saved with no results: ${scan.errors.join('; ')}`)
+      return scan
+    }
+  },
+  {
+    name: 'idea_lab_context', risk: 'safe',
+    description: 'Read this user’s saved creative mission, stretch revenue goals, human idea reviews and recent dated trend snapshots. Goals are not forecasts; no external request is made.',
+    parameters: { type: 'object', properties: {} },
+    async run(_a, c) {
+      return (await import('./idea-lab')).getLabContext(c.userId)
+    }
   },
   {
     name: 'web_search', risk: 'safe', description: 'Search the web. Returns titles, URLs and snippets.',

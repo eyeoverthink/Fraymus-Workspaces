@@ -108,7 +108,7 @@ export type IdeaReport = ReturnType<typeof buildIdeaReport> & {
   research?: { status: 'complete' | 'failed' | 'not_requested'; query?: string; error?: string; result?: unknown }
 }
 
-export function saveIdeaReport(userId: string, report: IdeaReport) {
+export function saveIdeaReport<T extends IdeaReport>(userId: string, report: T) {
   const id = randomUUID()
   db.prepare('insert into idea_reports(id,user_id,audience,report_json,created_at) values(?,?,?,?,?)')
     .run(id, userId, report.audience, JSON.stringify(report), report.createdAt)

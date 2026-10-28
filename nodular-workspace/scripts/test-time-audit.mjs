@@ -29,5 +29,17 @@ const edit = await api('PUT', `/api/time-audit/${first.body.id}`, { startedAt: s
 ok(edit.status === 200 && edit.body.activity === 'Focused work', 'owner can edit a recorded block')
 const other = await api('PUT', '/api/time-audit/999999', { startedAt: startA.toISOString(), activity: 'No access', energy: 5, valueUsd: 0 })
 ok(other.status === 400 && /not found/i.test(other.body?.error), 'missing entry cannot be updated')
+const weekend = '/api/time-audit/weekend/2026-11-07'
+ok((await api('GET', '/api/time-audit/weekend/2026-11-06')).status === 400, 'weekend tracker requires a Saturday date')
+const started = await api('POST', `${weekend}/start`)
+ok(started.status === 200 && started.body.total === 6, 'weekend exercise installs six checklist tasks')
+const task = started.body.tasks[0]
+const completed = await api('PUT', `${weekend}/tasks/${task.id}`, { title: task.title, done: true, notes: 'Recorded eight blocks' })
+ok(completed.body.completed === 1 && completed.body.tasks[0].notes === 'Recorded eight blocks', 'completion and notes are stored')
+ok((await api('POST', `${weekend}/start`)).body.completed === 1, 'reinstalling checklist never resets saved progress')
+const custom = await api('POST', `${weekend}/tasks`, { title: 'Interview a customer' })
+const customId = custom.body.tasks.find((item) => item.title === 'Interview a customer').id
+ok(custom.body.total === 7 && (await api('DELETE', `${weekend}/tasks/${customId}`)).body.total === 6, 'custom weekend tasks can be added and removed')
+ok((await api('GET', '/api/time-audit/weekend/2026-11-14')).body.total === 0, 'weekend checklists remain separated by date')
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED')
 process.exitCode = fails ? 1 : 0

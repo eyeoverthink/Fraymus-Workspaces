@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiFetch, errorText } from '../lib/api'
 import { toast } from '../components/Toasts'
+import WeekendChecklist from './WeekendChecklist'
 
 type Activity = { activity: string; slots: number; minutes: number; averageEnergy: number; valueUsd: number }
 type Entry = { id: number; started_at: number; activity: string; energy: number; value_usd: number; complaint: string }
@@ -68,6 +69,7 @@ export default function TimeAuditPage({ onFindIdeas }: { onFindIdeas?: () => voi
         <div style={{ color: '#999', fontSize: 12, marginBottom: 14 }}>
           Log each 30-minute block yourself: activity, energy (1–10), estimated business value, and what you complained about. This page does not monitor your device.
         </div>
+        <WeekendChecklist />
         <section style={panel}>
           <h3 style={{ margin: '0 0 10px' }}>Log a 30-minute block</h3>
           <form onSubmit={save} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>

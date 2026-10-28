@@ -11,7 +11,7 @@ const env = {
   ...process.env, PORT: port, DATA_DIR: dataDir, LLM_PROVIDERS: 'none', BASE: base, BASE_URL: base,
   GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', INTEGRATION_ENCRYPTION_KEY: '',
   CANVA_CLIENT_ID: '', CANVA_CLIENT_SECRET: '', LINKEDIN_CLIENT_ID: '', LINKEDIN_CLIENT_SECRET: '',
-  WHISPER_CPP_PATH: '', WHISPER_MODEL_PATH: ''
+  WHISPER_CPP_PATH: '', WHISPER_MODEL_PATH: '', IDEA_VISION_MODEL: ''
 }
 const server = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/index.ts'], { env, stdio: 'ignore' })
 const stop = async () => {
@@ -37,7 +37,7 @@ const run = (file) => new Promise((res) => spawn(process.execPath, file.endsWith
 let failed = 0
 try {
   await ready()
-  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-google.mjs', 'scripts/test-integrations.mjs', 'scripts/test-integration-logic.ts', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-time-audit.mjs', 'scripts/test-idea-finder.mjs']) {
+  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-google.mjs', 'scripts/test-integrations.mjs', 'scripts/test-integration-logic.ts', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-time-audit.mjs', 'scripts/test-idea-finder.mjs', 'scripts/test-idea-lab.ts']) {
     console.log(`\n== ${f}`)
     if (await run(f)) failed++
   }

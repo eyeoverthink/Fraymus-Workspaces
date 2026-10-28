@@ -1,5 +1,5 @@
 export type ToolCall = { id: string; name: string; arguments: Record<string, any> }
-export type Msg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string }
+export type Msg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; images?: string[]; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string }
 export type ToolSpec = { name: string; description: string; parameters: any }
 export type LlmResult = { content: string; tool_calls: ToolCall[]; provider: string; model: string }
 
@@ -39,7 +39,7 @@ async function callOllama(messages: Msg[], tools: ToolSpec[], model?: string): P
     messages: messages.map((m) =>
       m.role === 'assistant' && m.tool_calls?.length
         ? { role: 'assistant', content: m.content, tool_calls: m.tool_calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) }
-        : m.role === 'tool' ? { role: 'tool', content: m.content, tool_name: m.name } : { role: m.role, content: m.content })
+        : m.role === 'tool' ? { role: 'tool', content: m.content, tool_name: m.name } : { role: m.role, content: m.content, ...(m.images?.length ? { images: m.images } : {}) })
   }
   const r = await fetch(`${ollamaHost()}/api/chat`, { method: 'POST', headers: ollamaHeaders(), body: JSON.stringify(body), signal: AbortSignal.timeout(180000) })
   if (!r.ok) throw new Error(`ollama ${r.status}: ${(await r.text()).slice(0, 200)}`)
@@ -57,7 +57,10 @@ async function callOpenAI(name: string, base: string, key: string, messages: Msg
     messages: messages.map((m) =>
       m.role === 'assistant' && m.tool_calls?.length
         ? { role: 'assistant', content: m.content || null, tool_calls: m.tool_calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.arguments) } })) }
-        : m.role === 'tool' ? { role: 'tool', tool_call_id: m.tool_call_id, content: m.content } : { role: m.role, content: m.content })
+        : m.role === 'tool' ? { role: 'tool', tool_call_id: m.tool_call_id, content: m.content } : {
+          role: m.role,
+          content: m.images?.length ? [{ type: 'text', text: m.content }, ...m.images.map((image) => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } }))] : m.content
+        })
   }
   const r = await fetch(`${base.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000)
@@ -83,6 +86,16 @@ const providers: Provider[] = [
     call: (m, t, model) => callOpenAI('openai', process.env.OPENAI_BASE_URL!, process.env.OPENAI_API_KEY!, m, t, model || process.env.OPENAI_MODEL || 'gpt-4o-mini')
   }
 ]
+
+// Vision input must not silently fall through to a different provider or a text-only default model.
+export async function chatVision(messages: Msg[], hint: string): Promise<LlmResult> {
+  const [name, ...parts] = hint.split(':')
+  const model = parts.join(':').trim()
+  const provider = providers.find((item) => item.name === name)
+  if (!provider || !model) throw new Error('IDEA_VISION_MODEL must name a supported provider:model (ollama, groq or openai)')
+  if (!(await provider.configured())) throw new Error(`Vision provider "${name}" is not configured`)
+  return provider.call(messages, [], model)
+}
 
 // Order is LLM_PROVIDERS (default: ollama,groq,openai): self-hosted first, hosted as fallback
 const order = () => (process.env.LLM_PROVIDERS || 'ollama,groq,openai').split(',').map((s) => s.trim()).filter(Boolean)

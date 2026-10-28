@@ -48,6 +48,26 @@ const promptOnlySkills: SkillDefinition[] = promptOnlyNames.map((id) => ({
 
 const appSkills: SkillDefinition[] = [
   {
+    id: 'creative-idea-lab',
+    name: 'Creative idea lab',
+    description: 'Combine user-supplied evidence and optional approved public research into saved, human-reviewed business, career and AI-skill hypotheses.',
+    tools: ['idea_lab_context', 'idea_lab_research', 'idea_lab_save_draft'],
+    group: 'app-native',
+    execution: 'mixed',
+    requirements: ['Public fetching and configured AI synthesis require explicit consent; local combinations need no model'],
+    note: 'Instagram/private D&B access is not implemented. Goals are not forecasts; no publishing, outreach or spending.'
+  },
+  {
+    id: 'ai-trend-radar',
+    name: 'AI trend radar',
+    description: 'Save dated public YouTube metadata and web-search snapshots for predefined AI topics.',
+    tools: ['ai_trend_scan'],
+    group: 'app-native',
+    execution: 'external-service',
+    requirements: ['Internet access; provider rate/consent limits may prevent results'],
+    note: 'Not video transcription, an earnings ranking, or exhaustive trend prediction. Optional automation templates install disabled.'
+  },
+  {
     id: 'memory',
     name: 'Persistent memory',
     description: 'Search and save user-scoped memories stored in the local SQLite database.',

@@ -3,19 +3,21 @@ import WorkflowCanvas from './canvas/WorkflowCanvas'
 import MonacoWorkspace from './editor/MonacoWorkspace'
 import LivePreview from './editor/LivePreview'
 import { useWorkflowStore } from './store/useWorkflowStore'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { apiFetch, errorText } from './lib/api'
 import AgentsPage from './agents/AgentsPage'
 import ConnectPage from './agents/ConnectPage'
 import AutomationsPage from './agents/AutomationsPage'
 import ActionLogPage from './agents/ActionLogPage'
 import TimeAuditPage from './agents/TimeAuditPage'
-import IdeaFinderPage from './agents/IdeaFinderPage'
 import { Toasts, toast } from './components/Toasts'
+const IdeaFinderPage = lazy(() => import('./agents/IdeaFinderPage'))
 
 export default function App() {
-  const [view, setView] = useState<'agents' | 'canvas' | 'connect' | 'automations' | 'action-log' | 'time-audit' | 'idea-finder'>(() =>
-    new URLSearchParams(window.location.search).get('view') === 'connect' ? 'connect' : 'agents')
+  const [view, setView] = useState<'agents' | 'canvas' | 'connect' | 'automations' | 'action-log' | 'time-audit' | 'idea-finder'>(() => {
+    const requested = new URLSearchParams(window.location.search).get('view')
+    return requested === 'canvas' || requested === 'connect' || requested === 'automations' || requested === 'action-log' || requested === 'time-audit' || requested === 'idea-finder' ? requested : 'agents'
+  })
   const { isRunning, executionLog, deployedUrl, setDeployedUrl } = useWorkflowStore()
   const [showLogs, setShowLogs] = useState(false)
 
@@ -76,7 +78,7 @@ export default function App() {
         ))}
       </nav>
       <div style={{ flex: 1, minHeight: 0 }}>
-        {view === 'agents' ? <AgentsPage /> : view === 'connect' ? <ConnectPage /> : view === 'automations' ? <AutomationsPage /> : view === 'action-log' ? <ActionLogPage /> : view === 'time-audit' ? <TimeAuditPage onFindIdeas={() => setView('idea-finder')} /> : view === 'idea-finder' ? <IdeaFinderPage /> : canvasView}
+        {view === 'agents' ? <AgentsPage /> : view === 'connect' ? <ConnectPage /> : view === 'automations' ? <AutomationsPage /> : view === 'action-log' ? <ActionLogPage /> : view === 'time-audit' ? <TimeAuditPage onFindIdeas={() => setView('idea-finder')} /> : view === 'idea-finder' ? <Suspense fallback={<div style={{ padding: 18 }}>Loading Idea Finder...</div>}><IdeaFinderPage /></Suspense> : canvasView}
       </div>
       <Toasts />
     </div>

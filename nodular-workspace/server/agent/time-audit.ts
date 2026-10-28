@@ -1,4 +1,72 @@
 import { db, now } from './db'
+import { randomUUID } from 'node:crypto'
+
+export const WEEKEND_TASKS = [
+  'Log Saturday in 30-minute blocks',
+  'Log Sunday in 30-minute blocks',
+  'Review energy, time leaks, and repeated complaints',
+  'Combine evidence into three business hypotheses',
+  'Choose one idea and define a 12-hour MVP',
+  'Run one customer-validation experiment and record what happened'
+]
+
+function weekendKey(value: unknown) {
+  const key = String(value || '')
+  const date = new Date(`${key}T00:00:00Z`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== key || date.getUTCDay() !== 6) {
+    throw new Error('weekend must be the Saturday date in YYYY-MM-DD format')
+  }
+  return key
+}
+
+export function listWeekendTasks(userId: string, weekend: unknown) {
+  const key = weekendKey(weekend)
+  const tasks = db.prepare('select id,title,done,notes,updated_at from weekend_tasks where user_id=? and weekend=? order by rowid')
+    .all(userId, key).map((row) => ({ id: String(row.id), title: String(row.title), done: !!row.done, notes: String(row.notes), updated_at: Number(row.updated_at) }))
+  const completed = tasks.filter((task) => task.done).length
+  return { weekend: key, tasks, completed, total: tasks.length, progress: tasks.length ? Math.round(completed / tasks.length * 100) : 0 }
+}
+
+export function startWeekend(userId: string, weekend: unknown) {
+  const key = weekendKey(weekend)
+  const existing = listWeekendTasks(userId, key)
+  const missing = WEEKEND_TASKS.filter((_title, index) => !existing.tasks.some((task) => task.id === `default-${index + 1}`)).length
+  if (existing.total + missing > 50) throw new Error('a weekend can contain at most 50 tasks')
+  for (const [index, title] of WEEKEND_TASKS.entries()) {
+    db.prepare('insert or ignore into weekend_tasks(id,user_id,weekend,title,updated_at) values(?,?,?,?,?)')
+      .run(`default-${index + 1}`, userId, key, title, now())
+  }
+  return listWeekendTasks(userId, key)
+}
+
+export function saveWeekendTask(userId: string, weekend: unknown, input: { title: string; done?: boolean; notes?: string }, id?: string) {
+  const key = weekendKey(weekend)
+  const title = String(input.title || '').trim()
+  const existing = id ? db.prepare('select done,notes from weekend_tasks where user_id=? and weekend=? and id=?').get(userId, key, id) : undefined
+  if (id && !existing) throw new Error('weekend task not found')
+  const notes = input.notes === undefined ? String(existing?.notes || '') : String(input.notes).trim()
+  const done = input.done === undefined ? !!existing?.done : input.done
+  if (!title || title.length > 240) throw new Error('task title must contain 1-240 characters')
+  if (notes.length > 2000) throw new Error('task notes must be 2000 characters or fewer')
+  if (input.done !== undefined && typeof input.done !== 'boolean') throw new Error('done must be a boolean')
+  if (id) {
+    const result = db.prepare('update weekend_tasks set title=?,done=?,notes=?,updated_at=? where user_id=? and weekend=? and id=?')
+      .run(title, done ? 1 : 0, notes, now(), userId, key, id)
+    if (!result.changes) throw new Error('weekend task not found')
+  } else {
+    const count = db.prepare('select count(*) as n from weekend_tasks where user_id=? and weekend=?').get(userId, key)
+    if (Number(count?.n) >= 50) throw new Error('a weekend can contain at most 50 tasks')
+    db.prepare('insert into weekend_tasks(id,user_id,weekend,title,done,notes,updated_at) values(?,?,?,?,?,?,?)')
+      .run(randomUUID(), userId, key, title, input.done ? 1 : 0, notes, now())
+  }
+  return listWeekendTasks(userId, key)
+}
+
+export function deleteWeekendTask(userId: string, weekend: unknown, id: string) {
+  const result = db.prepare('delete from weekend_tasks where user_id=? and weekend=? and id=?').run(userId, weekendKey(weekend), id)
+  if (!result.changes) throw new Error('weekend task not found')
+  return listWeekendTasks(userId, weekend)
+}
 
 export type TimeAuditInput = {
   startedAt: string | number

@@ -17,6 +17,11 @@ create table if not exists agent_action_log(id integer primary key autoincrement
 create index if not exists idx_action_user on agent_action_log(user_id, id desc);
 create table if not exists time_audit_entries(id integer primary key autoincrement, user_id text not null, started_at integer not null, activity text not null, energy integer not null, value_usd real not null, complaint text not null default '', created_at integer not null, unique(user_id, started_at));
 create index if not exists idx_time_audit_user on time_audit_entries(user_id, started_at desc);
+create table if not exists weekend_tasks(id text not null, user_id text not null, weekend text not null, title text not null, done integer not null default 0, notes text not null default '', updated_at integer not null, primary key(user_id,weekend,id));
+create table if not exists idea_lab_settings(user_id text primary key, settings_json text not null, updated_at integer not null);
+create table if not exists idea_reviews(user_id text not null, report_id text not null, idea_index integer not null, review_json text not null, updated_at integer not null, primary key(user_id,report_id,idea_index));
+create table if not exists trend_scans(id text primary key, user_id text not null, scan_json text not null, created_at integer not null);
+create index if not exists idx_trend_scans_user on trend_scans(user_id,created_at desc);
 create table if not exists custom_agents(id text primary key, user_id text, json text, created_at integer);
 create table if not exists automations(id text primary key, user_id text not null, name text not null, cron text not null, kind text not null, agent_id text, tool text, payload text, enabled integer default 1, last_minute integer, created_at integer);
 create table if not exists automation_runs(id text primary key, automation_id text not null, user_id text, trigger text, status text, thread_id text, output text, error text, started_at integer, finished_at integer);
