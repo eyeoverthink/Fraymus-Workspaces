@@ -54,7 +54,7 @@ function Access() {
       <h3 style={{ margin: '0 0 8px' }}>Let other agents in (OpenClaw, Claude, anything MCP)</h3>
       <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
         MCP endpoint <code>{origin}/mcp</code> (streamable HTTP, Bearer auth). OAuth 2.0 client_credentials at <code>{origin}/oauth/token</code>, discovery at <code>/.well-known/oauth-authorization-server</code>.
-        Scopes: <b>read</b> = see agents/tools/threads, <b>run</b> = talk to agents, <b>admin</b> = edit agents, call any tool, approve, import MCP servers.
+        Scopes: <b>read</b> = inspect agents/tools/threads, <b>run</b> = talk to agents, <b>admin</b> = edit agents, call safe tools, manage automations and import MCP servers. Approval-required actions still need review in the authenticated app; MCP clients cannot approve them.
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
         <input style={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="name" />
