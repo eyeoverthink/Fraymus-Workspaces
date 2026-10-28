@@ -5,17 +5,34 @@ import { chat, type Msg } from './llm'
 import { allTools, getTool, matchesTool, resultText, searchMemories, toolSpec, type Tool, type ToolCtx } from './tools'
 import type { Store } from '../store'
 
-export type AgentDef = {
-  id: string; name: string; role?: string; description?: string; greeting?: string
-  systemPrompt: string; tools: '*' | string[]; model?: string; custom?: boolean
-}
+import { loadManifests, writeOverride, removeOverride, validId, type AgentDef } from './manifest'
+export type { AgentDef }
 
 const MAX_STEPS = 8
 const MAX_HISTORY = 40
 const MAX_INPUT = 8000
 let store: Store
 
-const builtinAgents: AgentDef[] = JSON.parse(readFileSync(existsSync('./config/agents.json') ? './config/agents.json' : new URL('../../config/agents.json', import.meta.url), 'utf8'))
+const builtinAgents = () => loadManifests()
+
+const cleanTools = (t: any): '*' | string[] => {
+  if (t === '*' || t == null) return '*'
+  if (!Array.isArray(t)) return '*'
+  const known = new Set(allTools().map((x) => x.name))
+  return t.map(String).filter((n) => known.has(n) || /^[\w-]+\*$/.test(n) || /^[\w-]+__\*$/.test(n))
+}
+
+// Edits the manifest in DATA_DIR/agents, which overrides the shipped default of the same id.
+export function saveAgentManifest(a: any): AgentDef {
+  const id = String(a.id || '').toLowerCase()
+  if (!validId(id)) throw new Error('id must be lowercase letters, digits and underscores')
+  if (!a.name || !a.systemPrompt) throw new Error('name and systemPrompt are required')
+  const def: AgentDef = { id, name: String(a.name).slice(0, 60), systemPrompt: String(a.systemPrompt).slice(0, 8000), tools: cleanTools(a.tools) }
+  for (const k of ['role', 'description', 'greeting', 'model'] as const) if (a[k]) def[k] = String(a[k]).slice(0, 300)
+  writeOverride(def)
+  return { ...def, source: 'override' }
+}
+export const resetAgentManifest = (id: string) => removeOverride(id)
 
 export function initAgents(s: Store) {
   store = s
@@ -25,14 +42,14 @@ export function initAgents(s: Store) {
 
 export function listAgents(userId: string): AgentDef[] {
   const custom = (db.prepare('select json from custom_agents where user_id=?').all(userId) as any[]).map((r) => ({ ...JSON.parse(r.json), custom: true }))
-  return [...builtinAgents, ...custom]
+  return [...builtinAgents(), ...custom]
 }
 export const getAgent = (userId: string, id: string) => listAgents(userId).find((a) => a.id === id)
 
 export function saveCustomAgent(userId: string, a: any): AgentDef {
   const id = String(a.id || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_|_$/g, '')
   if (!id || !a.name || !a.systemPrompt) throw new Error('id, name and systemPrompt are required')
-  if (builtinAgents.some((b) => b.id === id)) throw new Error('id is reserved by a built-in agent')
+  if (builtinAgents().some((b) => b.id === id)) throw new Error('id is reserved by a built-in agent')
   const known = new Set(allTools().map((t) => t.name))
   const tools = a.tools === '*' || a.tools == null ? '*' : (Array.isArray(a.tools) ? a.tools.map(String).filter((n: string) => matchesTool([n], n) && (known.has(n) || n.endsWith('*'))) : '*')
   const def: AgentDef = { id, name: String(a.name).slice(0, 60), role: a.role ? String(a.role).slice(0, 100) : undefined, description: a.description ? String(a.description).slice(0, 300) : undefined, systemPrompt: String(a.systemPrompt).slice(0, 8000), tools, model: a.model ? String(a.model) : undefined }
@@ -45,7 +62,7 @@ export function saveCustomAgent(userId: string, a: any): AgentDef {
 const toolsFor = (a: AgentDef): Tool[] => (a.tools === '*' ? allTools() : allTools().filter((t) => matchesTool(a.tools as string[], t.name)))
 
 function systemPrompt(agent: AgentDef, userId: string, userText: string): string {
-  const roster = builtinAgents.concat(listAgents(userId).filter((a) => a.custom)).filter((a) => a.id !== agent.id)
+  const roster = listAgents(userId).filter((a) => a.id !== agent.id)
     .map((a) => `- ${a.id}: ${a.role || a.description || a.name}`).join('\n')
   const mem = searchMemories(userId, userText, 5)
   return [
@@ -216,3 +233,26 @@ export function deleteThread(userId: string, id: string) {
 
 export const listMemories = (userId: string) => db.prepare('select id,agent_id,text,created_at from memories where user_id=? order by id desc limit 200').all(userId)
 export const deleteMemory = (userId: string, id: number) => Number(db.prepare('delete from memories where id=? and user_id=?').run(id, userId).changes) > 0
+
+// Starts a run and waits until it finishes or needs approval (used by the MCP server and other headless callers).
+export async function runAgentAndWait(userId: string, agentId: string, message: string, threadId?: string, timeoutMs = 120_000) {
+  const { runId, threadId: tid } = startRun(userId, agentId, message, threadId)
+  const t0 = Date.now()
+  for (;;) {
+    const run = db.prepare('select status,error,provider,model from runs where id=?').get(runId) as any
+    if (run.status !== 'running' || Date.now() - t0 > timeoutMs) {
+      const last = db.prepare("select content from messages where thread_id=? and role='assistant' order by id desc limit 1").get(tid) as any
+      const approvals = db.prepare("select id,tool,args from approvals where run_id=? and status='pending'").all(runId) as any[]
+      return { threadId: tid, runId, status: run.status, error: run.error || undefined, provider: run.provider, model: run.model, reply: last?.content || '', pendingApprovals: approvals.map((a) => ({ id: a.id, tool: a.tool, args: JSON.parse(a.args) })) }
+    }
+    await new Promise((r) => setTimeout(r, 400))
+  }
+}
+
+// Direct tool execution for an authenticated admin principal (no per-call approval: the token itself is the authorization).
+export async function callToolDirect(userId: string, name: string, args: any) {
+  const tool = getTool(name)
+  if (!tool) throw new Error(`unknown tool: ${name}`)
+  const ctx: ToolCtx = { userId, agentId: 'mcp', threadId: '', depth: 0, store, delegate: (id, task) => delegateRun(userId, id, task, 1) }
+  return resultText(await tool.run(args || {}, ctx))
+}

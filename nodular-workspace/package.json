@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "server": "tsx server/index.ts",
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
-    "test:workflow": "node scripts/test-workflow.mjs"
+    "test": "node scripts/test-all.mjs",
+    "test:workflow": "node scripts/test-workflow.mjs",
+    "test:mcp-server": "node scripts/test-mcp-server.mjs",
+    "clean": "node -e \"for (const d of ['dist','data-test']) require('fs').rmSync(d,{recursive:true,force:true})\""
   },
   "dependencies": {
     "@clerk/backend": "^3.26.4",
@@ -28,6 +31,7 @@
     "socket.io-client": "^4.8.1",
     "y-websocket": "^2.0.4",
     "yjs": "^13.6.27",
+    "zod": "^4.6.7",
     "zustand": "^4.5.5"
   },
   "devDependencies": {

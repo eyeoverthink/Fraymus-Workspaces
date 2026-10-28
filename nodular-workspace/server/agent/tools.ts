@@ -204,6 +204,9 @@ const extra: Tool[] = []
 export function registerTools(tools: Tool[]) {
   for (const t of tools) if (!extra.some((e) => e.name === t.name) && !builtinTools.some((b) => b.name === t.name)) extra.push(t)
 }
+export function unregisterTools(prefix: string) {
+  for (let i = extra.length - 1; i >= 0; i--) if (extra[i].name.startsWith(prefix)) extra.splice(i, 1)
+}
 export const allTools = () => [...(cache ||= [...builtinTools, ...loadHttpTools()]), ...extra]
 export const matchesTool = (allow: string[], name: string) => allow.some((p) => p === name || (p.endsWith('*') && name.startsWith(p.slice(0, -1))))
 export const getTool = (n: string) => allTools().find((t) => t.name === n)

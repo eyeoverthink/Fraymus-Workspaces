@@ -13,6 +13,8 @@ import { reportRunUsage, createCheckout } from './billing'
 import { registerAgentRoutes } from './agent/routes'
 import { initAgents } from './agent/runtime'
 import { initMcp } from './agent/mcp'
+import { registerOAuthRoutes, registerAccessRoutes } from './agent/auth'
+import { registerMcpServer } from './agent/mcp-server'
 import { registerMediaTools } from './agent/media'
 
 const PORT = Number(process.env.PORT || 3001)
@@ -246,6 +248,9 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
 registerMediaTools()
 initAgents(store)
 initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))
+registerOAuthRoutes(fastify)
+registerMcpServer(fastify)
+registerAccessRoutes(fastify)
 registerAgentRoutes(fastify)
 
 // Serve the built frontend when present (production / Docker)

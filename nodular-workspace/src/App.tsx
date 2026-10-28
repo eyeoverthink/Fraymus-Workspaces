@@ -6,10 +6,11 @@ import { useWorkflowStore } from './store/useWorkflowStore'
 import { useState } from 'react'
 import { apiFetch, errorText } from './lib/api'
 import AgentsPage from './agents/AgentsPage'
+import ConnectPage from './agents/ConnectPage'
 import { Toasts, toast } from './components/Toasts'
 
 export default function App() {
-  const [view, setView] = useState<'agents' | 'canvas'>('agents')
+  const [view, setView] = useState<'agents' | 'canvas' | 'connect'>('agents')
   const { isRunning, executionLog, deployedUrl, setDeployedUrl } = useWorkflowStore()
   const [showLogs, setShowLogs] = useState(false)
 
@@ -63,14 +64,14 @@ export default function App() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0a0a', color: '#e5e5e5' }}>
       <nav style={{ display: 'flex', gap: 4, padding: '6px 12px', borderBottom: '1px solid #222', background: '#0e0e0e' }}>
-        {(['agents', 'canvas'] as const).map((v) => (
+        {(['agents', 'canvas', 'connect'] as const).map((v) => (
           <button key={v} onClick={() => setView(v)} style={{ fontSize: 12, padding: '4px 14px', borderRadius: 20, border: '1px solid #333', cursor: 'pointer', background: view === v ? '#fff' : '#1a1a1a', color: view === v ? '#000' : '#aaa', fontWeight: 700 }}>
-            {v === 'agents' ? 'Agents' : 'Workflow canvas'}
+            {v === 'agents' ? 'Agents' : v === 'connect' ? 'Connect' : 'Workflow canvas'}
           </button>
         ))}
       </nav>
       <div style={{ flex: 1, minHeight: 0 }}>
-        {view === 'agents' ? <AgentsPage /> : canvasView}
+        {view === 'agents' ? <AgentsPage /> : view === 'connect' ? <ConnectPage /> : canvasView}
       </div>
       <Toasts />
     </div>

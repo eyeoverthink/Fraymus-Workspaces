@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { providerStatus } from './llm'
 import { allTools } from './tools'
-import { mcpStatus } from './mcp'
+import { mcpStatus, mcpServers, importServers, removeServer } from './mcp'
 import {
-  listAgents, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
+  listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
 } from './runtime'
 
 const fail = (reply: any, e: any, code = 400) => reply.status(code).send({ error: e.message || String(e) })
@@ -22,6 +22,20 @@ export function registerAgentRoutes(app: FastifyInstance) {
     try { return saveCustomAgent((req as any).userId, req.body) } catch (e) { return fail(reply, e) }
   })
 
+
+  app.get('/api/agents/:id', async (req, reply) => getAgent((req as any).userId, (req.params as any).id) || reply.status(404).send({ error: 'Not found' }))
+  app.put('/api/agents/:id', async (req, reply) => {
+    try { return saveAgentManifest({ ...(req.body as any), id: (req.params as any).id }) } catch (e) { return fail(reply, e) }
+  })
+  app.delete('/api/agents/:id/override', async (req) => ({ ok: resetAgentManifest((req.params as any).id) }))
+
+  app.get('/api/mcp', async () => mcpServers())
+  app.post('/api/mcp/import', async (req, reply) => {
+    try { return await importServers(req.body) } catch (e) { return fail(reply, e) }
+  })
+  app.delete('/api/mcp/:name', async (req, reply) => {
+    try { return { ok: await removeServer((req.params as any).name) } } catch (e) { return fail(reply, e) }
+  })
   app.post('/api/agent/runs', async (req, reply) => {
     const { agentId, message, threadId } = (req.body as any) || {}
     try { return startRun((req as any).userId, String(agentId || 'concierge'), message, threadId) } catch (e) { return fail(reply, e) }

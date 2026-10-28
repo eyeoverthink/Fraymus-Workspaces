@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { registerTools } from './tools'
+import { registerTools, unregisterTools } from './tools'
 import type { Tool } from './tools'
 
 type ServerDef = {
@@ -46,7 +46,12 @@ function flatten(result: any): any {
   return text
 }
 
-async function connect(def: ServerDef): Promise<Tool[]> {
+
+const clients = new Map<string, Client>()
+const defs = new Map<string, ServerDef & { imported?: boolean }>()
+const importedFile = () => `${process.env.DATA_DIR || './data'}/mcp-servers.json`
+
+async function connect(def: ServerDef): Promise<{ client: Client; tools: Tool[] }> {
   const client = new Client({ name: 'nodular-workspace', version: '1.0.0' })
   if (def.url) {
     const headers: Record<string, string> = {}
@@ -61,7 +66,7 @@ async function connect(def: ServerDef): Promise<Tool[]> {
 
   const listed = await withTimeout(client.listTools(), 15000, 'list tools')
   const safe = new Set(def.safeTools || [])
-  return listed.tools.map((t): Tool => ({
+  const tools = listed.tools.map((t): Tool => ({
     name: `${def.name}__${t.name}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64),
     description: `[${def.name}] ${t.description || t.name}`.slice(0, 1000),
     risk: safe.has(t.name) ? 'safe' : 'approval',
@@ -70,25 +75,89 @@ async function connect(def: ServerDef): Promise<Tool[]> {
       return flatten(await client.callTool({ name: t.name, arguments: args || {} }, undefined, { timeout: 10 * 60_000 }))
     }
   }))
+  return { client, tools }
+}
+
+async function start(def: ServerDef & { imported?: boolean }) {
+  const missing = (def.requires || []).filter((k) => !process.env[k])
+  const set = (s: McpState) => { const i = state.findIndex((x) => x.name === def.name); if (i >= 0) state[i] = s; else state.push(s) }
+  defs.set(def.name, def)
+  if (def.disabled || missing.length) return set({ name: def.name, status: 'skipped', tools: 0, detail: def.disabled ? 'disabled' : `set ${missing.join(', ')}` })
+  try {
+    const { client, tools } = await connect(def)
+    clients.set(def.name, client)
+    registerTools(tools)
+    set({ name: def.name, status: 'connected', tools: tools.length })
+  } catch (e: any) {
+    set({ name: def.name, status: 'error', tools: 0, detail: String(e?.message || e).slice(0, 300) })
+  }
+}
+
+function readFile(path: string): any[] {
+  if (!existsSync(path)) return []
+  try { return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, '')) } catch { return [] }
 }
 
 export async function initMcp(path = process.env.MCP_SERVERS_FILE || './config/mcp-servers.json') {
   state.length = 0
-  if (!existsSync(path)) return state
-  const defs: ServerDef[] = JSON.parse(readFileSync(path, 'utf8'))
-  await Promise.all(defs.map(async (def) => {
-    const missing = (def.requires || []).filter((k) => !process.env[k])
-    if (def.disabled || missing.length) {
-      state.push({ name: def.name, status: 'skipped', tools: 0, detail: def.disabled ? 'disabled' : `set ${missing.join(', ')}` })
-      return
-    }
-    try {
-      const tools = await connect(def)
-      registerTools(tools)
-      state.push({ name: def.name, status: 'connected', tools: tools.length })
-    } catch (e: any) {
-      state.push({ name: def.name, status: 'error', tools: 0, detail: String(e?.message || e).slice(0, 300) })
-    }
-  }))
+  const base: ServerDef[] = readFile(path)
+  const imported = readFile(importedFile()).map((d: ServerDef) => ({ ...d, imported: true }))
+  await Promise.all([...base, ...imported].map(start))
   return state
+}
+
+export const mcpServers = () => state.map((s) => {
+  const d = defs.get(s.name)
+  return { ...s, transport: d?.url ? 'http' : 'stdio', target: d?.url || d?.command, imported: !!d?.imported }
+})
+
+const NAME_RE = /^[a-z][a-z0-9-]{0,30}$/
+
+// Accepts either one server object or a Claude-Desktop style { mcpServers: { name: {...} } } document.
+export function parseImport(input: any): ServerDef[] {
+  const out: ServerDef[] = []
+  const add = (name: string, d: any) => out.push({ name, description: d.description, url: d.url || d.serverUrl, command: d.command, args: Array.isArray(d.args) ? d.args.map(String) : undefined, env: d.env, headers: d.headers, safeTools: Array.isArray(d.safeTools) ? d.safeTools.map(String) : undefined })
+  if (input?.mcpServers && typeof input.mcpServers === 'object') for (const [n, d] of Object.entries<any>(input.mcpServers)) add(n, d || {})
+  else if (input?.name) add(String(input.name), input)
+  else throw new Error('provide {name,url|command,...} or {mcpServers:{...}}')
+  return out
+}
+
+export async function importServers(input: any) {
+  const list = parseImport(input)
+  const results: McpState[] = []
+  for (const d of list) {
+    if (!NAME_RE.test(d.name)) throw new Error(`invalid server name "${d.name}" (lowercase letters, digits, single dashes; max 31)`)
+    if (!d.url && !d.command) throw new Error(`${d.name}: needs url or command`)
+    if (d.url && !/^https?:\/\//i.test(subst(d.url))) throw new Error(`${d.name}: url must be http(s)`)
+    if (d.command && process.env.ALLOW_STDIO_IMPORT !== '1') throw new Error(`${d.name}: importing a local command server is disabled; set ALLOW_STDIO_IMPORT=1 on the server to allow it`)
+    if (defs.has(d.name) && !defs.get(d.name)!.imported) throw new Error(`${d.name}: name is used by a built-in config server`)
+  }
+  for (const d of list) {
+    await removeServer(d.name, false)
+    await start({ ...d, imported: true })
+    results.push(state.find((s) => s.name === d.name)!)
+  }
+  persist()
+  return results
+}
+
+function persist() {
+  const keep = [...defs.values()].filter((d) => d.imported).map(({ imported, ...d }) => d)
+  mkdirSync(process.env.DATA_DIR || './data', { recursive: true })
+  writeFileSync(importedFile(), JSON.stringify(keep, null, 2), { mode: 0o600 })
+}
+
+export async function removeServer(name: string, save = true) {
+  const d = defs.get(name)
+  if (d && !d.imported) throw new Error('built-in config servers are removed by editing config/mcp-servers.json')
+  unregisterTools(`${name}__`)
+  const c = clients.get(name)
+  clients.delete(name)
+  defs.delete(name)
+  const i = state.findIndex((s) => s.name === name)
+  if (i >= 0) state.splice(i, 1)
+  if (c) await c.close().catch(() => {})
+  if (save) persist()
+  return !!d
 }
