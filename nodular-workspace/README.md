@@ -7,11 +7,13 @@ Rebuild of $4M Enhancor Workflows video using 100% FREE 2026 stack.
 
 ## Quick Start
 
-npm i --legacy-peer-deps`ncp .env.example .env
-# Add free keys (optional - works without with mocks + sharp local)
-# GROQ_API_KEY from https://console.groq.com
-# HF_TOKEN from https://huggingface.co/settings/tokens
+npm i --legacy-peer-deps
+cp .env.example .env
 npm run dev:all
+
+Copy `.env.example` to `.env`. Put real keys only in `.env`, and never in `.env.example`. Every value in `.env.example` stays blank. `.env` is gitignored.
+
+Optional keys (the app still runs with mocks and sharp if they are unset): `GROQ_API_KEY` from https://console.groq.com, `HF_TOKEN` from https://huggingface.co/settings/tokens. For xAI, set the OpenAI-compatible variables in `.env` only: `OPENAI_BASE_URL=https://api.x.ai/v1`, `OPENAI_API_KEY` from https://console.x.ai, and `OPENAI_MODEL` (for example `grok-4.7`). `server/agent/llm.ts` reads those three names and does not read `XAI_API_KEY`. If `OPENAI_MODEL` is blank, that provider sends `gpt-4o-mini`. Docker Compose loads `.env` into the API. `npm run dev:all` uses the process environment, so export the variables before starting the API locally.
 
 Canvas: http://localhost:5173
 Server: http://localhost:3001
@@ -60,7 +62,7 @@ Written but untested without your accounts: Supabase store, Clerk auth, Stripe m
 Open the **Agents** tab: chat with Concierge or any of the specialists defined in `agents/*.md`.
 Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, HTTP tools) show an **Approve / Reject** card.
 
-- **Models**: `LLM_PROVIDERS` order (Ollama -> Groq -> OpenAI-compatible). Point `OLLAMA_HOST` at your VPS. With nothing configured, a clearly labeled offline mock answers (a banner is shown).
+- **Models**: `LLM_PROVIDERS` order (Ollama -> Groq -> OpenAI-compatible). Point `OLLAMA_HOST` at your VPS. xAI Grok uses that OpenAI-compatible path (`OPENAI_BASE_URL=https://api.x.ai/v1`, `OPENAI_API_KEY`, `OPENAI_MODEL` in `.env`; see `.env.example`). With nothing configured, a clearly labeled offline mock answers (a banner is shown).
 - **Edit agents**: each agent is one manifest file, `agents/<id>.md` (front-matter: id, name, role, description, greeting, model, tools; body = system prompt). Edit the file, use the **Connect** tab, or let a connected agent do it over MCP; runtime edits are stored as overrides in `DATA_DIR/agents/` and win over the shipped defaults. Users can also create their own agents via `POST /api/agents`.
 - **HTTP tools**: `config/http-tools.json` defines tools backed by your own services (Fraynix engine, Hermes, TTS). **These endpoint paths and body shapes are templates I guessed; adapt them to your real APIs.** A tool is skipped until every `${ENV:NAME}` it references is set.
 - **Data**: threads, memories and approvals live in `DATA_DIR/agent.db` (local SQLite).
