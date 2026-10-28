@@ -3,7 +3,7 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { Server } from 'socket.io'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { runLlama, runFlux, runRemover, runUpscaler } from './services'
 import { createStore } from './store'
@@ -12,6 +12,8 @@ import { authenticateClerk } from './lib/clerk'
 import { reportRunUsage, createCheckout } from './billing'
 import { registerAgentRoutes } from './agent/routes'
 import { initAgents } from './agent/runtime'
+import { initMcp } from './agent/mcp'
+import { registerMediaTools } from './agent/media'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -64,8 +66,10 @@ fastify.get('/health', async () => ({ ok: true, store: store.kind }))
 
 fastify.get('/outputs/:name', async (req, reply) => {
   const { name } = req.params as any
-  if (!/^[\w.-]+\.png$/.test(name) || !existsSync(`${outputsDir}/${name}`)) return reply.status(404).send({ error: 'Not found' })
-  return reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=31536000, immutable').send(readFileSync(`${outputsDir}/${name}`))
+  const types: Record<string, string> = { png: 'image/png', mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif', wav: 'audio/wav', mp3: 'audio/mpeg', ogg: 'audio/ogg' }
+  const ext = /^[\w-][\w.-]*\.(png|mp4|webm|gif|wav|mp3|ogg)$/.exec(name)?.[1]
+  if (!ext || !existsSync(`${outputsDir}/${name}`)) return reply.status(404).send({ error: 'Not found' })
+  return reply.header('Content-Type', types[ext]).header('Cache-Control', 'public, max-age=31536000, immutable').send(createReadStream(`${outputsDir}/${name}`))
 })
 
 fastify.get('/api/me', async (req) => store.ensureUser((req as any).userId))
@@ -239,7 +243,9 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
   }
 })
 
+registerMediaTools()
 initAgents(store)
+initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))
 registerAgentRoutes(fastify)
 
 // Serve the built frontend when present (production / Docker)

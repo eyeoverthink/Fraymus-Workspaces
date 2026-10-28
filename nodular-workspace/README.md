@@ -66,3 +66,18 @@ Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, HTTP 
 - **Data**: threads, memories and approvals live in `DATA_DIR/agent.db` (local SQLite).
 - **Safety**: `http_get` blocks private/loopback addresses (SSRF) unless `ALLOW_PRIVATE_FETCH=1`; delegated agents cannot run approval tools.
 - **Tests**: `node scripts/test-agent.mjs` (server with `LLM_PROVIDERS=none`).
+
+## Media skills (MCP bridge + HyperFrames)
+
+`config/mcp-servers.json` lists MCP servers whose tools are registered as `<server>__<tool>` (approval required unless in `safeTools`). A server is skipped unless its env var is set; status is in `/api/agent/status` under `mcp`.
+
+| Skill | How it is wired | Status |
+|---|---|---|
+| HyperFrames (Apache-2.0) | native `hyperframes_render` tool: HTML composition -> MP4/WebM/GIF via `npx hyperframes` (needs Node 22+, Chrome, FFmpeg) | **tested**: real 1080x1920 H.264 render |
+| VoiceStudio (AGPL-3.0) | MCP over HTTP, set `VOICESTUDIO_MCP_URL`. Install per https://voicestudio.sh | bridge tested with a fake MCP server; real VoiceStudio untested |
+| PhotoCraft (Apache-2.0) | stdio MCP, set `PHOTOCRAFT_CLI` to the `photocraft-cli` binary | bridge tested; real binary untested |
+| REA = *Reverse Engineer Anything* (MIT) | stdio MCP via `npx rea-agents --mcp`, set `REA_MCP=1` | bridge tested; real server untested. This is NOT the realtime editing agent |
+| Hypit | **not integrated**: it is a skill for coding agents (Claude Code/Codex) with its own license, not a runnable node | - |
+| Yjs realtime co-editing | **not built** | - |
+
+The `video_director` agent writes and renders HyperFrames compositions. Tests: `npx tsx scripts/test-mcp.ts`, `npx tsx scripts/test-media.ts`.

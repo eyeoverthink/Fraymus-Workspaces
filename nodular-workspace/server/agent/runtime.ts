@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { db, now } from './db'
 import { chat, type Msg } from './llm'
-import { allTools, getTool, resultText, searchMemories, toolSpec, type Tool, type ToolCtx } from './tools'
+import { allTools, getTool, matchesTool, resultText, searchMemories, toolSpec, type Tool, type ToolCtx } from './tools'
 import type { Store } from '../store'
 
 export type AgentDef = {
@@ -34,7 +34,7 @@ export function saveCustomAgent(userId: string, a: any): AgentDef {
   if (!id || !a.name || !a.systemPrompt) throw new Error('id, name and systemPrompt are required')
   if (builtinAgents.some((b) => b.id === id)) throw new Error('id is reserved by a built-in agent')
   const known = new Set(allTools().map((t) => t.name))
-  const tools = a.tools === '*' || a.tools == null ? '*' : (Array.isArray(a.tools) ? a.tools.map(String).filter((n: string) => known.has(n)) : '*')
+  const tools = a.tools === '*' || a.tools == null ? '*' : (Array.isArray(a.tools) ? a.tools.map(String).filter((n: string) => matchesTool([n], n) && (known.has(n) || n.endsWith('*'))) : '*')
   const def: AgentDef = { id, name: String(a.name).slice(0, 60), role: a.role ? String(a.role).slice(0, 100) : undefined, description: a.description ? String(a.description).slice(0, 300) : undefined, systemPrompt: String(a.systemPrompt).slice(0, 8000), tools, model: a.model ? String(a.model) : undefined }
   const owner = db.prepare('select user_id from custom_agents where id=?').get(id) as any
   if (owner && owner.user_id !== userId) throw new Error('id already taken')
@@ -42,7 +42,7 @@ export function saveCustomAgent(userId: string, a: any): AgentDef {
   return { ...def, custom: true }
 }
 
-const toolsFor = (a: AgentDef): Tool[] => (a.tools === '*' ? allTools() : allTools().filter((t) => (a.tools as string[]).includes(t.name)))
+const toolsFor = (a: AgentDef): Tool[] => (a.tools === '*' ? allTools() : allTools().filter((t) => matchesTool(a.tools as string[], t.name)))
 
 function systemPrompt(agent: AgentDef, userId: string, userText: string): string {
   const roster = builtinAgents.concat(listAgents(userId).filter((a) => a.custom)).filter((a) => a.id !== agent.id)

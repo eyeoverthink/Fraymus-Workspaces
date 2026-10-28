@@ -1,0 +1,23 @@
+[
+  {
+    "name": "voicestudio",
+    "description": "VoiceStudio (AGPL-3.0) local speech/voice MCP. Install separately: https://voicestudio.sh",
+    "url": "${ENV:VOICESTUDIO_MCP_URL}",
+    "requires": ["VOICESTUDIO_MCP_URL"],
+    "safeTools": ["list_voices", "list_personalities", "list_languages", "check_health", "describe_voice"]
+  },
+  {
+    "name": "photocraft",
+    "description": "PhotoCraft headless MCP (Apache-2.0). Needs the photocraft-cli binary.",
+    "command": "${ENV:PHOTOCRAFT_CLI}",
+    "args": ["mcp"],
+    "requires": ["PHOTOCRAFT_CLI"]
+  },
+  {
+    "name": "rea",
+    "description": "Reverse Engineer Anything (morluto/rea, MIT) - binary/app analysis MCP. Opt-in: set REA_MCP=1.",
+    "command": "npx",
+    "args": ["-y", "rea-agents@latest", "--mcp"],
+    "requires": ["REA_MCP"]
+  }
+]

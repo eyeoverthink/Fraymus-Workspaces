@@ -14,8 +14,15 @@ const get = async (url: string) => {
 }
 const imagesIn = (m: Msg) => {
   if (m.role !== 'tool') return []
-  try { const v = JSON.parse(m.content); return typeof v.imageUrl === 'string' ? [v.imageUrl] : [] } catch { return [] }
+  try {
+    const v = JSON.parse(m.content)
+    return [v.imageUrl, v.mediaUrl].filter((u): u is string => typeof u === 'string' && u.startsWith('/outputs/'))
+  } catch { return [] }
 }
+const MediaView = ({ url }: { url: string }) =>
+  /\.(mp4|webm)$/i.test(url) ? <video src={url} controls style={{ maxWidth: 320, borderRadius: 8, marginTop: 4, background: '#222' }} />
+  : /\.(wav|mp3|ogg)$/i.test(url) ? <audio src={url} controls style={{ marginTop: 4 }} />
+  : <img src={url} style={{ maxWidth: 320, borderRadius: 8, marginTop: 4, background: '#222' }} />
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -116,7 +123,7 @@ export default function AgentsPage() {
             if (m.role === 'tool') return (
               <div key={m.id} style={{ alignSelf: 'flex-start', fontSize: 11, color: '#888' }}>
                 ⚙ {m.name}
-                {imagesIn(m).map((u) => <div key={u}><img src={u} style={{ maxWidth: 320, borderRadius: 8, marginTop: 4, background: '#222' }} /></div>)}
+                {imagesIn(m).map((u) => <div key={u}><MediaView url={u} /></div>)}
               </div>
             )
             return (

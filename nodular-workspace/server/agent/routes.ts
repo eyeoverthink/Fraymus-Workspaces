@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { providerStatus } from './llm'
 import { allTools } from './tools'
+import { mcpStatus } from './mcp'
 import {
   listAgents, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
 } from './runtime'
@@ -10,6 +11,7 @@ const fail = (reply: any, e: any, code = 400) => reply.status(code).send({ error
 export function registerAgentRoutes(app: FastifyInstance) {
   app.get('/api/agent/status', async () => ({
     ...(await providerStatus()),
+    mcp: mcpStatus(),
     tools: allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description }))
   }))
 
