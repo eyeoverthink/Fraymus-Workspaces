@@ -182,6 +182,21 @@ export function startRun(userId: string, agentId: string, text: string, threadId
   return { runId, threadId }
 }
 
+// Queue an exact user-requested tool action without relying on a model to select it.
+export function requestToolApproval(userId: string, agentId: string, name: string, args: Record<string, unknown>, title: string) {
+  const agent = getAgent(userId, agentId)
+  const tool = getTool(name)
+  if (!agent || !tool || tool.risk !== 'approval' || !toolsFor(agent).some((item) => item.name === name)) throw new Error('Agent cannot request approval for this tool')
+  const threadId = randomUUID(), runId = randomUUID(), callId = randomUUID(), approvalId = randomUUID()
+  db.prepare('insert into threads(id,user_id,agent_id,title,created_at,updated_at) values(?,?,?,?,?,?)').run(threadId, userId, agentId, title.slice(0, 60), now(), now())
+  db.prepare("insert into runs(id,thread_id,user_id,status,provider,model,created_at,updated_at) values(?,?,?,'awaiting_approval','manual-tool','exact-action',?,?)").run(runId, threadId, userId, now(), now())
+  addMsg(threadId, runId, { role: 'user', content: title })
+  addMsg(threadId, runId, { role: 'assistant', content: 'Review the exact requested action before approving.', tool_calls: [{ id: callId, name, arguments: args }] })
+  db.prepare('insert into approvals(id,run_id,thread_id,user_id,call_id,tool,args,status,created_at) values(?,?,?,?,?,?,?,?,?)').run(approvalId, runId, threadId, userId, callId, name, JSON.stringify(args), 'pending', now())
+  recordAction(userId, agentId, name, 'approval_requested', runId, threadId)
+  return { runId, threadId, approvalId }
+}
+
 async function delegateRun(userId: string, agentId: string, task: string, depth: number): Promise<string> {
   if (!getAgent(userId, agentId)) throw new Error(`unknown agent: ${agentId}`)
   const threadId = randomUUID()
@@ -219,6 +234,14 @@ export async function decideApproval(userId: string, approvalId: string, approve
 
   const left = db.prepare("select count(*) c from approvals where run_id=? and status='pending'").get(ap.run_id) as any
   if (!left.c) {
+    const run = db.prepare('select provider from runs where id=?').get(ap.run_id)
+    if (run?.provider === 'manual-tool') {
+      let result: unknown
+      try { result = JSON.parse(content) } catch { result = content }
+      const error = approve && result && typeof result === 'object' && 'error' in result && result.error ? String(result.error) : null
+      setRun(ap.run_id, { status: error ? 'error' : 'done', error })
+      return { status: approve ? 'approved' : 'rejected' }
+    }
     setRun(ap.run_id, { status: 'running' })
     void drive(ap.run_id)
   }

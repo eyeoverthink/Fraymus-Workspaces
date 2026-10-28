@@ -75,6 +75,10 @@ const linkedinWrite = await a.call('call_tool', { name: 'linkedin_publish_text',
 ok(linkedinWrite.error && /explicit user approval/i.test(linkedinWrite.text), 'MCP cannot bypass approval for LinkedIn publishing')
 const researchWrite = await a.call('call_tool', { name: 'idea_lab_research', arguments: { audience: 'repair shops', query: 'AI opportunities', includeResearch: true } })
 ok(researchWrite.error && /explicit user approval/i.test(researchWrite.text), 'MCP cannot bypass approval for mixed-source idea research')
+for (const name of ['mega_create_pack', 'mega_render_video']) {
+  const action = await a.call('call_tool', { name, arguments: { id: '00000000-0000-4000-8000-000000000000' } })
+  ok(action.error && /explicit user approval/i.test(action.text), `MCP cannot bypass approval for ${name}`)
+}
 const weekend = (await a.call('start_weekend_checklist', { weekend: '2026-10-31' })).json()
 ok(weekend.total === 6 && (await o.call('list_weekend_checklist', { weekend: '2026-10-31' })).json().total === 6, 'MCP weekend checklist is available to scoped clients')
 ok((await o.call('start_weekend_checklist', { weekend: '2026-10-31' })).error, 'read/run MCP tokens cannot mutate weekend checklists')

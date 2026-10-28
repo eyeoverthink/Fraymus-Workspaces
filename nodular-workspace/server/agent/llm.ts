@@ -2,6 +2,7 @@ export type ToolCall = { id: string; name: string; arguments: Record<string, any
 export type Msg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; images?: string[]; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string }
 export type ToolSpec = { name: string; description: string; parameters: any }
 export type LlmResult = { content: string; tool_calls: ToolCall[]; provider: string; model: string }
+type ChatOptions = { jsonSchema?: Record<string, unknown>; maxTokens?: number }
 
 const specs = (tools: ToolSpec[]) => (tools.length ? tools.map((t) => ({ type: 'function', function: t })) : undefined)
 const parseArgs = (a: any) => {
@@ -28,13 +29,16 @@ async function ollamaModels(): Promise<string[]> {
   return models
 }
 
-async function callOllama(messages: Msg[], tools: ToolSpec[], model?: string): Promise<LlmResult> {
+async function callOllama(messages: Msg[], tools: ToolSpec[], model?: string, options: ChatOptions = {}): Promise<LlmResult> {
   const available = await ollamaModels()
   const use = model || process.env.OLLAMA_MODEL || available[0]
   if (!use) throw new Error('no Ollama model available')
   const body = {
     model: use,
     stream: false,
+    think: /^gpt-oss(?::|$)/.test(use) ? 'low' : false,
+    ...(options.jsonSchema ? { format: options.jsonSchema } : {}),
+    options: { num_predict: options.maxTokens || 6000, num_ctx: 16384 },
     tools: specs(tools),
     messages: messages.map((m) =>
       m.role === 'assistant' && m.tool_calls?.length
@@ -47,12 +51,15 @@ async function callOllama(messages: Msg[], tools: ToolSpec[], model?: string): P
   const calls: ToolCall[] = (j.message?.tool_calls || []).map((c: any, i: number) => ({
     id: `call_${Date.now().toString(36)}_${i}`, name: c.function?.name, arguments: parseArgs(c.function?.arguments)
   }))
+  if (!j.message?.content?.trim() && !calls.length) throw new Error(`Ollama model ${use} returned no text or tool calls${j.done_reason ? ` (${j.done_reason})` : ''}`)
   return { content: j.message?.content || '', tool_calls: calls, provider: 'ollama', model: use }
 }
 
-async function callOpenAI(name: string, base: string, key: string, messages: Msg[], tools: ToolSpec[], model: string): Promise<LlmResult> {
+async function callOpenAI(name: string, base: string, key: string, messages: Msg[], tools: ToolSpec[], model: string, options: ChatOptions = {}): Promise<LlmResult> {
   const body = {
     model,
+    ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
+    ...(options.jsonSchema ? { response_format: { type: 'json_object' } } : {}),
     tools: specs(tools),
     messages: messages.map((m) =>
       m.role === 'assistant' && m.tool_calls?.length
@@ -70,20 +77,21 @@ async function callOpenAI(name: string, base: string, key: string, messages: Msg
   const m = j.choices?.[0]?.message
   if (!m) throw new Error(`${name}: empty response`)
   const calls: ToolCall[] = (m.tool_calls || []).map((c: any) => ({ id: c.id, name: c.function?.name, arguments: parseArgs(c.function?.arguments) }))
+  if (!m.content?.trim() && !calls.length) throw new Error(`${name}: model returned no text or tool calls`)
   return { content: m.content || '', tool_calls: calls, provider: name, model }
 }
 
-type Provider = { name: string; configured: () => boolean | Promise<boolean>; call: (m: Msg[], t: ToolSpec[], model?: string) => Promise<LlmResult> }
+type Provider = { name: string; configured: () => boolean | Promise<boolean>; call: (m: Msg[], t: ToolSpec[], model?: string, options?: ChatOptions) => Promise<LlmResult> }
 
 const providers: Provider[] = [
   { name: 'ollama', configured: async () => (await ollamaModels()).length > 0, call: callOllama },
   {
     name: 'groq', configured: () => !!process.env.GROQ_API_KEY,
-    call: (m, t, model) => callOpenAI('groq', 'https://api.groq.com/openai/v1', process.env.GROQ_API_KEY!, m, t, model || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+    call: (m, t, model, options) => callOpenAI('groq', 'https://api.groq.com/openai/v1', process.env.GROQ_API_KEY!, m, t, model || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', options)
   },
   {
     name: 'openai', configured: () => !!(process.env.OPENAI_BASE_URL && process.env.OPENAI_API_KEY),
-    call: (m, t, model) => callOpenAI('openai', process.env.OPENAI_BASE_URL!, process.env.OPENAI_API_KEY!, m, t, model || process.env.OPENAI_MODEL || 'gpt-4o-mini')
+    call: (m, t, model, options) => callOpenAI('openai', process.env.OPENAI_BASE_URL!, process.env.OPENAI_API_KEY!, m, t, model || process.env.OPENAI_MODEL || 'gpt-4o-mini', options)
   }
 ]
 
@@ -94,7 +102,7 @@ export async function chatVision(messages: Msg[], hint: string): Promise<LlmResu
   const provider = providers.find((item) => item.name === name)
   if (!provider || !model) throw new Error('IDEA_VISION_MODEL must name a supported provider:model (ollama, groq or openai)')
   if (!(await provider.configured())) throw new Error(`Vision provider "${name}" is not configured`)
-  return provider.call(messages, [], model)
+  return provider.call(messages, [], model, { maxTokens: 1000 })
 }
 
 // Order is LLM_PROVIDERS (default: ollama,groq,openai): self-hosted first, hosted as fallback
@@ -110,7 +118,7 @@ export async function providerStatus() {
 }
 
 // hint: "provider" or "provider:model"
-export async function chat(messages: Msg[], tools: ToolSpec[], hint?: string): Promise<LlmResult> {
+export async function chat(messages: Msg[], tools: ToolSpec[], hint?: string, options: ChatOptions = {}): Promise<LlmResult> {
   const [hp, ...hm] = (hint || '').split(':')
   const hintedModel = hm.join(':') || undefined
   const names = order()
@@ -125,7 +133,7 @@ export async function chat(messages: Msg[], tools: ToolSpec[], hint?: string): P
     if (!p || !(await p.configured())) continue
     anyConfigured = true
     try {
-      return await p.call(messages, tools, n === hp ? hintedModel : undefined)
+      return await p.call(messages, tools, n === hp ? hintedModel : undefined, options)
     } catch (e: any) {
       errors.push(`${n}: ${e.message}`)
     }

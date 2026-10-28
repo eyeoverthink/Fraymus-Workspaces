@@ -14,6 +14,7 @@ export type RunRow = {
 
 export interface Store {
   kind: string
+  close?(): void
   ensureUser(id: string): Promise<User>
   getUser(id: string): Promise<User | null>
   setStripeCustomer(id: string, customerId: string): Promise<void>
@@ -46,6 +47,7 @@ async function sqliteStore(): Promise<Store> {
   const toWf = (r: any): WorkflowRow => ({ ...r, nodes: JSON.parse(r.nodes), edges: JSON.parse(r.edges), is_deployed: !!r.is_deployed })
   const self: Store = {
     kind: 'sqlite',
+    close() { db.close() },
     async ensureUser(id) {
       db.prepare('insert or ignore into users (id) values (?)').run(id)
       return (await self.getUser(id))!

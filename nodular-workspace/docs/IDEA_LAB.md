@@ -19,6 +19,15 @@ Open **Idea Finder** or `?view=idea-finder`. Enter an audience, a natural-langua
 
 Source fetching, web search, YouTube search and model synthesis each have separate opt-in checkboxes. Search transmits the brief/audience, not full pasted notes; common emails, phone-like numbers and URLs are redacted from search queries, but this is not guaranteed anonymization. Model synthesis sends collected evidence, audit summary, mission and recent human feedback through the configured local/hosted model chain. Do not opt in for confidential or unauthorized material.
 
+**Browser / capture** can supply a user-selected tab/window screenshot: the user
+chooses the screen in the native permission picker, reviews/redacts locally, then
+separately consents to vision analysis in Idea Finder. No background capture,
+cross-origin DOM read, cookie access or framing/login restriction bypass exists.
+Run `npm run models:configure` to select already-installed local text/tool and
+vision models, followed by `npm run models:test`; restart after configuration.
+`IDEA_MODEL` selects structured synthesis, while `IDEA_VISION_MODEL` selects the
+exact image-capable model. See the [complete app guide](../README.md).
+
 Generation saves either three or ten hypotheses, with a specific problem, evidence, 12-hour prototype scope, validation experiment, risks and source IDs. With model synthesis off, a deterministic local combinator uses the actual supplied evidence across different business/skills/career angles. It is labeled accordingly, not advertised as AI-authored market analysis. A configured LLM can produce structured original synthesis; malformed output, duplicate titles or invented source IDs are rejected. If no model is configured, the local fallback is explicitly labeled. Real provider failures surface as errors instead of a success-shaped report.
 
 The source ledger includes dates, extracted evidence, blocked content and failed requests. Search snippets and self-reported notes are hypotheses, not validation. No video transcript is read.

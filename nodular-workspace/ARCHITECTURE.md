@@ -1,58 +1,76 @@
+# Nodular architecture and boundaries
 
-# ARCHITECTURE - Nodular Workspace Full
-
-## System Diagram
-
+```text
+React/Vite
+  Agents / Connect / Automations / Action log
+  Time audit + weekend checklist / Idea Finder
+  Browser + one-frame capture / Mega draft chain
+  ReactFlow DAG / Monaco / preview
+          |
+  Authenticated /api routes (local open mode when Clerk is unset)
+          |
+Fastify
+  Agent runtime -> LLM router -> Ollama / Groq / OpenAI-compatible
+       |                |
+       |                +-> exact-provider vision / schema-validated drafts
+       +-> scoped tools -> safe operations or pending exact-action approvals
+       +-> delegation (cannot execute approval-required tools)
+       +-> UTC scheduler (safe tool jobs, reviewable agent runs)
+       +-> audit / messages / reviews / saved drafts
+  Native integrations -> encrypted per-user provider credentials
+  Workflow executor -> text / FLUX / remover / upscaler / preview
+  Mega chain -> copy / native PNG cards / HTML / combinations
+       +-> separately approved HyperFrames render
+  Scoped token-authenticated /mcp <-> external MCP clients
+  MCP bridge -> optional external MCP services (imported calls need approval)
+          |
+  agent.db + agents overrides + mcp-servers.json
+  nodular.db OR Supabase workflow store
+  DATA_DIR/mega (owner-checked PNG route)
+  DATA_DIR/outputs (existing public-by-URL output route)
 ```
-[User] --drag--> [ReactFlow Canvas @xyflow/react]
-   |                 | (nodes, edges JSON)
-   |                 v
-   |           [Zustand Store] --debounce--> POST /api/rea/suggest
-   |                 |                          |
-   |                 |                          v
-   |                 |                    [REA Agent - Groq Llama free]
-   |                 |                          | io.emit('rea:suggestion')
-   |                 |                          v
-   |                 |                    [Monaco Editor - ghost text]
-   |                 |
-   |                 v Run Workflow button
-   |           [executor.ts - topological sort]
-   |                 |
-   |                 +--> /api/llama (Groq free) -> text
-   |                 +--> /api/flux (HF FLUX schnell free) -> image blob
-   |                 +--> /api/remover (BiRefNet free WASM) -> transparent PNG
-   |                 +--> /api/upscaler (Sharp 4x free) -> 4K PNG
-   |                 +--> /api/workflows/:id/run (deploy endpoint - your product)
-   |                 |
-   |                 v
-   |           [Live Preview - HTML + 4K image]
-   |
-   +--> Deploy API button --> POST /api/workflows + /deploy --> returns curl endpoint
-```
 
-## Free Stack Justification
+## Evidence and authority
 
-| Paid (Video) | Free (This Repo) | Implementation | Cost |
-|---|---|---|---|
-| Nano Banana 2 | FLUX.1 schnell | HF Inference API + sharp fallback SVG | $0 Apache 2.0 |
-| Claude Sonnet | Llama 3.3 70B | Groq API 14k tok/s | $0 |
-| Remove.bg | BiRefNet | @imgly/background-removal WASM + HF RMBG-1.4 | $0 local |
-| Magnific | Real-ESRGAN | Sharp lanczos3 4x + replicate optional | $0 local |
+Agent/model output cannot change tool risk or approve its own actions. MCP admin
+tokens cannot invoke approval tools directly; delegated agents cannot execute
+them. The Mega render button queues a saved pack ID as an exact tool approval;
+deciding that approval executes one action without another model planning step.
+Failures remain in the run, pack and action log.
 
-## Data Flow for 5-Node Chain
+The browser iframe is sandboxed and may be refused by a site's framing policy.
+The app neither proxies around that policy nor reads cross-origin DOM/cookies.
+`getDisplayMedia` uses the browser's user-controlled picker. Capture/redaction
+happen locally; sharing to Idea Finder and vision-model upload are separate
+steps. Stream tracks stop after one frame/failure/cancellation.
 
-1. Node 1 Llama: input prompt "mirror selfie" -> Groq -> enhanced prompt "UGC mirror selfie, iPhone flash, Gen-Z bedroom, vintage denim..."
-2. Node 2 FLUX: enhanced prompt -> HF FLUX schnell (4 steps) -> 1024x1024 blob URL
-3. Node 3 Remover: blob URL -> fetch blob -> FormData -> /api/remover -> HF RMBG-1.4 returns transparent PNG -> blob URL
-4. Node 4 Upscaler: transparent PNG -> /api/upscaler -> sharp resize 4096x4096 lanczos3 -> blob URL
-5. Node 5 Preview: final blob URL + text -> HTML with <img> + deploy curl
+Research source fetching is bounded and uses the existing SSRF-protected helper.
+No general shell is exposed by the parallel-fetch skill. Model context, source
+pages and imported tool output are evidence, not trusted instructions.
 
-## Realtime
+## Model paths
 
-- Yjs + y-websocket for multi-user cursor sync (future)
-- Socket.io for REA suggestions + canvas updates
-- Zustand for local state, syncs to store on every change
+Agents and the canvas text engine use the common provider router. `IDEA_MODEL`
+selects structured idea/content synthesis; `IDEA_VISION_MODEL` selects one exact
+vision provider/model with no silent vision-provider fallback. Local setup writes
+only ignored `.env` settings, not repository credentials/weights. Diagnostics
+separate capability metadata from actual synthetic inference results.
 
-## Deploy as API - Product Moat
+## Persistence and deployment
 
-Workflows Map in-memory (replace with Postgres). Each workflow is DAG + system prompts. Deploy creates endpoint that runs DAG server-side. Customer pays per run. System prompt chain is IP, not model.
+SQLite is the default. Supabase replaces the workflow store, **not** the agent/
+automation/integration SQLite state. Use one application/scheduler instance.
+Back up the entire data directory plus server configuration and encryption key.
+Optional provider connections require real account setup and consent.
+
+The workflow canvas is a topologically sorted DAG. It is not the same engine as
+the agent tool loop or the native Mega draft chain. Mega's 100 combinations are
+hook/CTA records, not 100 rendered videos. Its cards are actual local PNG text
+artwork, not FLUX photography, PhotoCraft PSD editing or Hypit video cloning.
+
+Socket.io supplies canvas suggestions. Installed Yjs libraries are not an
+implemented shared multi-user editor. Optional REA MCP means Reverse Engineer
+Anything and is a separate integration.
+
+See [README.md](README.md) for the full capability matrix, operating instructions,
+privacy/approval warnings, APIs, tests and troubleshooting.

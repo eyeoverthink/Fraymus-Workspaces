@@ -39,6 +39,8 @@ create table if not exists linkedin_connections(user_id text primary key, token_
 create table if not exists linkedin_oauth_states(state_hash text primary key, user_id text not null, expires_at integer not null);
 create table if not exists idea_reports(id text primary key, user_id text not null, audience text not null, report_json text not null, created_at integer not null);
 create index if not exists idx_idea_reports_user on idea_reports(user_id,created_at desc);
+create table if not exists mega_packs(id text primary key, user_id text not null, pack_json text not null, created_at integer not null);
+create index if not exists idx_mega_packs_user on mega_packs(user_id,created_at desc);
 `)
 
 export const now = () => Date.now()

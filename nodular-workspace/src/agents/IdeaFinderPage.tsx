@@ -7,7 +7,7 @@ import { MissionPanel, ReviewPanel, TrendPanel, button, card, field, input, requ
 
 type Report = IdeaReport & Partial<Pick<LabReport, 'sources' | 'mission' | 'query' | 'generation'>> & { id: string }
 
-export default function IdeaFinderPage() {
+export default function IdeaFinderPage({ initialImage, onImageReceived }: { initialImage?: File | null; onImageReceived?: () => void }) {
   const [audience, setAudience] = useState('')
   const [pain, setPain] = useState('')
   const [query, setQuery] = useState('')
@@ -31,6 +31,11 @@ export default function IdeaFinderPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [labError, setLabError] = useState('')
+  useEffect(() => {
+    if (!initialImage) return
+    setFile(initialImage); setImageConsent(false); setImageMessage('Screenshot received locally. Review it and explicitly allow model analysis below.')
+    onImageReceived?.()
+  }, [initialImage, onImageReceived])
 
   const loadLab = useCallback(async () => {
     try { setLab(await request('/api/idea-finder/lab')); setLabError('') }
@@ -99,7 +104,7 @@ export default function IdeaFinderPage() {
             <label style={field}>Public HTTPS business / GitHub / Instagram / D&amp;B links (one per line, up to 5)<textarea style={{ ...input, minHeight: 80 }} value={urls} onChange={(e) => setUrls(e.target.value)} placeholder={'https://example.com\nhttps://github.com/owner/project'} /></label>
             <label style={field}>Optional D-U-N-S identifier<input style={input} value={duns} maxLength={11} onChange={(e) => setDuns(e.target.value)} placeholder="Nine digits; context only, no database verification" /><span style={{ fontSize: 11 }}>Instagram links are recorded but not scraped. Paste permitted content. No proprietary Dun &amp; Bradstreet API access is claimed.</span></label>
           </div>
-          <details style={{ border: '1px solid #333', borderRadius: 6, padding: 10 }}><summary style={{ cursor: 'pointer', fontSize: 12 }}>Add an image or screenshot</summary>
+          <details open={file ? true : undefined} style={{ border: '1px solid #333', borderRadius: 6, padding: 10 }}><summary style={{ cursor: 'pointer', fontSize: 12 }}>Add an image or screenshot</summary>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
               <input aria-label="Idea evidence image" type="file" accept="image/png,image/jpeg,image/webp" disabled={imageBusy} onChange={(e) => { setFile(e.target.files?.[0] || null); setImageMessage(''); setImageConsent(false) }} />
               {imagePreview && <img alt="Selected idea evidence preview" src={imagePreview} style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain' }} />}

@@ -1,117 +1,499 @@
+# Nodular Workspace
 
-# NODULAR WORKSPACE - FULL IMPLEMENTATION (No Stubs)
+A self-hosted workspace for editable AI agents, approval-gated tools, workflows,
+scheduled briefings, personal time audits, evidence-based idea research, and content
+drafting. React/Vite runs the interface; Fastify and SQLite run the agent hub.
+There is no Base44 runtime dependency.
 
-5-node chain: Llama Groq (brain) â†’ FLUX schnell (image) â†’ BiRefNet Remover â†’ Real-ESRGAN Upscaler â†’ HTML Preview + Deploy API
+**Free-first does not mean every service is free or connected.** Local templates,
+checklists, SQLite, native research helpers and image cards need no paid service.
+Genuine text generation, agent tool selection and image understanding need a real
+model. Cloud providers can charge; OAuth products can require vendor approval.
+The app distinguishes offline mocks, native outputs, configured integrations,
+pending approvals, failed calls, and unsupported capabilities.
 
-Rebuild of $4M Enhancor Workflows video using 100% FREE 2026 stack.
+## Contents
 
-## Quick Start
+- [Start locally](#start-locally)
+- [Configure real models](#configure-real-models)
+- [Workspace pages](#workspace-pages)
+- [Browser and screenshot evidence](#browser-and-screenshot-evidence)
+- [Mega one-button draft chain](#mega-one-button-draft-chain)
+- [Agents, tools and the fleet](#agents-tools-and-the-fleet)
+- [Automations](#automations)
+- [Time audit and creative research](#time-audit-and-creative-research)
+- [Connections and integrations](#connections-and-integrations)
+- [MCP and OpenClaw interoperability](#mcp-and-openclaw-interoperability)
+- [Workflow canvas and API deployment](#workflow-canvas-and-api-deployment)
+- [Storage, privacy and production safety](#storage-privacy-and-production-safety)
+- [Architecture and development](#architecture-and-development)
+- [Troubleshooting](#troubleshooting)
 
-npm i --legacy-peer-deps`ncp .env.example .env
-# Add free keys (optional - works without with mocks + sharp local)
-# GROQ_API_KEY from https://console.groq.com
-# HF_TOKEN from https://huggingface.co/settings/tokens
+## Start locally
+
+Use **Node.js 24** and npm. Node's SQLite API is experimental; its warning is
+expected. Run commands from this directory, not the repository's collection of
+historical root-level source files.
+
+```powershell
+Set-Location .\nodular-workspace
+npm ci --legacy-peer-deps
+Copy-Item .env.example .env
 npm run dev:all
+```
 
-Canvas: http://localhost:5173
-Server: http://localhost:3001
+Do not overwrite an existing `.env`; keep its account settings and secrets.
+The frontend is `http://localhost:5173`, the backend is `http://localhost:3001`,
+and `/health` reports backend/store readiness. Vite proxies `/api` requests.
 
-## What Was Added (Full, No Stubs)
+For the built UI and API on a single port:
 
-- BackgroundRemoverNode.tsx - indigo border, BiRefNet free WASM, shows transparent checkerboard preview
-- UpscalerNode.tsx - green border, Sharp 4x lanczos3, shows 4K output
-- executor.ts - full DAG topological sort, handles image blobs, error handling, progress callbacks
-- server/index.ts - 6 full routes, no TODOs, sharp for upscaler, HF proxies for FLUX/RMBG, Socket.io REA
-- AGENT_INSTRUCTIONS.md - briefing for Codex/Devin dumb agent
+```powershell
+npm run build
+npm run server
+```
 
-## Free Keys
+Open `http://localhost:3001`. `npm run server` automatically loads `.env` using
+Node's `--env-file-if-exists`; exported process variables take precedence.
+Vite independently reads its own `VITE_*` settings.
 
-All free tier, no credit card:
-- Groq: https://console.groq.com - Llama 3.3 70B 14k tok/s
-- HuggingFace: https://huggingface.co/settings/tokens - FLUX schnell + RMBG-1.4
+No model/key is required to inspect the app, use local templates, record time,
+manage checklists, or exercise the explicit mock agent. Mock responses are not
+AI reasoning or a functioning provider connection.
 
-Without keys, app still works: Groq returns mock enhanced prompt, FLUX returns SVG placeholder, remover/upscaler use sharp local.
+## Configure real models
 
-## Deploy as Product
+### Existing local Ollama installation
 
-Click Deploy API â†’ returns POST /api/workflows/:id/run
-Curl: curl -X POST http://localhost:3001/api/workflows/ugc-mirror-selfie-v1/run -d '{"prompt":"mirror selfie"}'
+Start Ollama using its supported desktop/service setup, then:
 
-This endpoint is your product. Charge per call. System prompt chain is moat.
+```powershell
+npm run models:configure
+npm run models:test
+npm run dev:all
+```
 
-## For Codex/Devin
+The configurator queries `/api/tags` and `/api/show`, selects an **installed
+tool-capable model** and an **installed vision model**, and writes nonsecret
+model selections to ignored `.env`. It deliberately selects a local-only provider
+order; unrelated environment settings are preserved. It does not install Ollama
+or download multi-gigabyte weights.
 
-Read AGENT_INSTRUCTIONS.md - explains what was built, file map, expectations, acceptance criteria. Implement true BiRefNet WASM via @imgly/background-removal-node and true Real-ESRGAN via replicate, add Supabase persistence, auth, billing.
+Preferred installed models include `gpt-oss:20b` for multi-step tool work,
+`llama3.2:latest` for lighter structured text, and `llava:latest` for vision.
+Other installed models with appropriate reported
+capabilities can be selected. Hardware, model license, quality and latency remain
+the operator's responsibility. If none are installed, use Ollama's official
+instructions to install suitable models, then rerun the configurator.
 
-## Video Concept
+Example resulting settings:
 
-Wrapper dies, workflow is IP. System prompt chain is moat, not model. This repo implements that with free models.
+```dotenv
+LLM_PROVIDERS=ollama
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_MODEL=gpt-oss:20b
+IDEA_MODEL=ollama:llama3.2:latest
+IDEA_VISION_MODEL=ollama:llava:latest
+```
 
+`npm run models:test` performs actual structured-text, synthetic tool-call and
+synthetic image inference. The vision test sends a generated red square, not a
+private screenshot. A capability label alone does not count as a successful test.
+The **Connect > Models** panel reports configured selections and offers the same
+synthetic checks with visible failure messages.
 
-## Status
+`npm run models:test-autonomy` is the stronger opt-in check: a real agent must
+read synthetic local context and actually save ten distinct idea drafts through
+its tools in a temporary database. Merely returning a tool-call-shaped probe is
+not enough to pass. Larger/stronger models may be needed for long multi-step
+creative assignments; the small-model probe does not guarantee their completion.
 
-See DEPLOY.md for Docker/Fly/Railway and env vars (.env.example).
-Verified: server pipeline, deploy + API-key runs, SQLite persistence, credits, local background removal, UI build.
-Written but untested without your accounts: Supabase store, Clerk auth, Stripe metering/checkout (no webhook), Replicate Real-ESRGAN (sharp lanczos3 is used otherwise), Docker build.
+The local implementation check successfully used `gpt-oss:20b` to read context
+and save ten distinct drafts through the real agent tool loop. The smaller
+`llama3.2:latest` passed structured ten-idea synthesis and Mega copy generation,
+but did not reliably finish that multi-step autonomous assignment, so it is not
+the selected local autonomous agent model. These are concrete smoke checks, not
+a promise of deterministic behavior on every later task.
 
+Agent chat and the canvas text node share the provider router. Idea Finder and
+Mega drafts use `IDEA_MODEL`, or the router default if absent. Vision uses the
+exact `IDEA_VISION_MODEL=provider:model`, without falling through to an unrelated
+provider or a text-only model. Structured Ollama drafts use JSON-schema output
+and are validated again by the server.
 
-## Agents
+### Hosted or remote models
 
-Open the **Agents** tab: chat with Concierge or any of the specialists defined in `agents/*.md`.
-Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, HTTP tools) show an **Approve / Reject** card.
+Use `OLLAMA_HOST` for a reachable trusted Ollama service; `OLLAMA_BASIC_AUTH`
+supports a reverse proxy. For Groq, configure `GROQ_API_KEY` and optionally
+`GROQ_MODEL`. For OpenAI-compatible servers set **both** `OPENAI_BASE_URL`
+(including the compatible API base path) and `OPENAI_API_KEY`, plus `OPENAI_MODEL`
+as needed. `LLM_PROVIDERS=ollama,groq,openai` defines fallback order.
 
-- **Models**: `LLM_PROVIDERS` order (Ollama -> Groq -> OpenAI-compatible). Point `OLLAMA_HOST` at your VPS. With nothing configured, a clearly labeled offline mock answers (a banner is shown).
-- **Edit agents**: each agent is one manifest file, `agents/<id>.md` (front-matter: id, name, role, description, greeting, model, tools; body = system prompt). Edit the file, use the **Connect** tab, or let a connected agent do it over MCP; runtime edits are stored as overrides in `DATA_DIR/agents/` and win over the shipped defaults. Users can also create their own agents via `POST /api/agents`.
-- **HTTP tools**: `config/http-tools.json` defines tools backed by your own services (Fraynix engine, Hermes, TTS). **These endpoint paths and body shapes are templates I guessed; adapt them to your real APIs.** A tool is skipped until every `${ENV:NAME}` it references is set.
-- **Data**: threads, memories and approvals live in `DATA_DIR/agent.db` (local SQLite).
-- **Safety**: `http_get` blocks private/loopback addresses (SSRF) unless `ALLOW_PRIVATE_FETCH=1`; delegated agents cannot run approval tools.
-- **Tests**: `node scripts/test-agent.mjs` (server with `LLM_PROVIDERS=none`).
+Cloud inference can incur cost and transmit supplied evidence outside this host.
+Review the configured provider before consenting. If configured calls fail, the
+app reports errors; it does not replace failed inference with claimed success.
+`LLM_PROVIDERS=none` deliberately exercises the offline mock. Supplying no usable
+provider also permits the explicitly labeled offline agent fallback.
 
-## Media skills (MCP bridge + HyperFrames)
+## Workspace pages
 
-`config/mcp-servers.json` lists MCP servers whose tools are registered as `<server>__<tool>`. Imported servers always require per-call approval; a caller cannot declare its own tools safe. The checked-in VoiceStudio config marks only a small, reviewed set of read-only status tools as safe. A server is skipped unless its env var is set; status is in `/api/agent/status` under `mcp`.
+| Page | Purpose |
+|---|---|
+| Agents | Chat, tool results, approval cards, editable/custom personas, saved conversations |
+| Workflow canvas | Connect text/image/removal/upscale/preview nodes and deploy a saved workflow API |
+| Mega draft chain | Brief/transcript to reviewable copy, PNG cards, composition and draft combinations |
+| Automations | Cron jobs, disabled templates, run-now, UTC next run and saved execution history |
+| Time audit | Manual 30-minute blocks, 48-hour summary and per-weekend checklist |
+| Idea Finder | Mixed-source combinations, model synthesis, missions, trend snapshots and human reviews |
+| Browser / capture | Sandboxed browsing, external-tab fallback, consent-based one-frame capture and local redaction |
+| Action log | User-scoped action/status/timestamp audit trail |
+| Connect | Model diagnostics, account connections, access tokens, MCP imports and manifest editing |
 
-| Skill | How it is wired | Status |
+Direct links accept `?view=agents`, `canvas`, `mega`, `automations`, `time-audit`,
+`idea-finder`, `browser`, `action-log`, or `connect`.
+
+## Browser and screenshot evidence
+
+1. Open **Browser / capture** and enter an HTTPS URL without embedded credentials.
+2. Try **Browse in panel**, or **Open your own tab** for sites that deny embedding
+   or need normal-tab login/storage.
+3. Click **Capture selected tab / window**. Your browser's native permission
+   picker decides what to share; the app cannot choose a hidden target for you.
+4. Review the single captured frame. Drag over sensitive regions to permanently
+   black them out in the reviewed copy, or discard the frame.
+5. Send the reviewed screenshot to Idea Finder. **Separately consent** there
+   before sending its pixels to the configured vision model.
+6. Review/correct the returned description. Only that reviewed text is included
+   when generating an idea report.
+
+Capture requests video only, never audio, and stops every stream track after one
+frame or on failure/cancellation. The captured frame is scaled to at most 1920
+pixels per side. Capture/redaction take place in browser memory; there is no
+screen recorder, automatic background capture or upload during this step.
+
+Screen capture requires a supporting desktop browser and a secure context
+(localhost or HTTPS). Embedded browsers, operating systems or permission policies
+may disable it. Uploading an ordinary screenshot remains available. The capture
+picker itself is intentionally user-operated, not an unattended capture API.
+
+The embedded page is sandboxed without same-origin privileges. Many sites use
+CSP/X-Frame-Options or storage policies that prevent embedding. There is no proxy
+that strips those protections. The app cannot inspect the cross-origin DOM,
+verify a selected screenshot's origin, reuse your browser cookies, or bypass a
+login, paywall or content-access restriction. Share only permitted content.
+
+## Mega one-button draft chain
+
+The attached Mega package was integrated by intent, not copied over the working
+app. Its fixed transcript, invented earnings, placeholder images, silent audio,
+claimed Hypit outputs, fake deployment response and unconditional success paths
+are **not** treated as implementations.
+
+Enter an audience and a 20-10,000 character brief/transcript. Choose local
+templates or explicitly consent to configured model synthesis, then click
+**Run native draft chain**. Optional WAV transcription reuses local Whisper only
+when its real executable/model are configured.
+
+| Stage | Actual output / boundary |
+|---|---|
+| Copy | Ten hooks, ten CTAs, summary and a narration script; validated real model output or labeled local templates |
+| Cards | Ten real 1080 x 1920 PNG text cards generated locally with Sharp; not generated photography or PSD layers |
+| Combinations | Ten paired drafts or all 100 hook x CTA combinations in JSON; ten underlying images, not 100 unique videos |
+| Composition | A 15-second portrait HTML/GSAP composition with the draft text; sandboxed preview and HTML download |
+| MP4 | Separate exact-action approval through the existing runtime; calls HyperFrames only after approval |
+| Voice | Script only; no native VoiceStudio synthesis or voice cloning adapter is configured by this flow |
+| Publish/deploy | Not automatic; use a separately approved publisher or the existing workflow deployment surface |
+
+Packs, generated cards and failed-run messages persist in `DATA_DIR`. PNG cards
+are served through owner-checked `/api/mega/packs/:id/cards/:index` routes and
+loaded using authenticated API requests. JSON/HTML/card downloads are available.
+Failed model calls are recorded as failures; they never silently become template
+or fake provider successes.
+
+The render request creates a visible approval for the exact saved pack ID.
+Approve/reject in Mega or Agents. A rejection executes nothing; successful and
+failed renders update the pack, run and action log. Direct MCP calls, delegated
+agents and unattended tool automations cannot bypass this approval.
+
+Rendering requires HyperFrames CLI support, Chrome and FFmpeg on the server and
+may download executable Node tooling. The composition uses GSAP from jsDelivr;
+the preview button says so before loading it. HTML is **not** an MP4. A render
+produces the ten-hook montage, not 100 cloned videos, speech, dubbing or publishing.
+
+REST: GET `/api/mega/health`, GET `/api/mega/packs`, GET `/api/mega/packs/:id`,
+POST `/api/mega/run`, POST `/api/mega/packs/:id/render`.
+Tools: `mega_create_pack` (approval), `mega_read_pack` (safe),
+`mega_render_video` (approval). The Content Engine persona can use them.
+
+## Agents, tools and the fleet
+
+Built-in Markdown manifests live under `agents/`; the Morgan roster adds 40 named
+roles plus Content Engine and Revenue Agent personas. They are editable runtime
+personas, **not** 42 permanently running processes. Users can create scoped
+custom agents. UI/agent manifest edits write overrides under `DATA_DIR/agents`;
+resetting an override restores the shipped definition.
+
+The registry exposes each tool's schema and `safe`/`approval` risk. Only tools
+available to that persona are offered to its model. Local tool results and
+external data are untrusted evidence, not instructions. Risky actions stop at
+visible approvals; delegated runs cannot execute them, and MCP clients cannot
+approve their own requests.
+
+The original fleet inventory has **34 entries**. Fifteen runnable free/no-key
+entries use native implementations: public search/read helpers, metadata,
+passive authorized header checks, bounded page extraction/fetching, arXiv
+reference starters, local nucleotide statistics, and opt-out draft templates.
+Nineteen entries are prompt-only guidance, not connected services. `/api/skills`
+and MCP `list_skills` expose honest status and available tools.
+
+HTTP service definitions in `config/http-tools.json` are optional operator
+templates, not verified contracts for your private services. Adapt them to
+documented APIs and set required environment variables before using them.
+Public research uses SSRF-protected `safeFetch`; it does not execute browser JS
+or provide a shell.
+
+## Automations
+
+Manage list/create/edit/enable/disable, templates, run-now and history in
+**Automations**. Cron is **five fields in UTC**, not browser-local time. The UI
+shows the next occurrence. The server must stay running; `SCHEDULER=off` stops
+the scheduler.
+
+Templates install disabled: daily report, six-hour research, memory check,
+Morgan briefings, AI trend radar and creative idea briefing. The memory check
+only searches memory; it is not a real continuity-relay heartbeat.
+
+Direct tool jobs accept safe tools only, checked at save **and** execution.
+Scheduled agent runs can reach `awaiting_approval`, never auto-approve publishing,
+sends, booking, payment actions, model-research approvals or render tools.
+Inspect the saved run/thread to continue an authorized action.
+
+There are no Base44 entity triggers, automatic Calendar event-change push
+subscriptions, or scheduled LinkedIn publisher. Existing external webhook
+senders can invoke the authenticated `/api/automations/:id/trigger` endpoint;
+that endpoint is not a new provider integration.
+
+## Time audit and creative research
+
+Record manual 30-minute blocks with activity, energy 1-10, estimated value and
+notes. The audit summarizes 48 hours and rejects overlapping blocks. It does not
+monitor your device or infer actual earnings.
+
+The weekend tracker saves six editable default exercise tasks, custom additions,
+completion and evidence notes per user/Saturday date. Reinstalling defaults
+preserves progress. Sunday selects the preceding Saturday; weekdays default to
+the upcoming weekend.
+
+Idea Finder combines an audience and natural-language brief with pasted text,
+public business/GitHub links, permitted Instagram/D&B excerpts, D-U-N-S context,
+image descriptions and the audit. Public fetching, web search, YouTube search
+and model synthesis each require opt-in. Instagram is not scraped, D-U-N-S is
+not verified against a proprietary database, and GitHub input reads public
+profile/repository metadata, not a full source-code audit.
+
+Generate three or ten saved hypotheses, each with a problem, evidence, 12-hour
+MVP scope, experiment, risks and validated source IDs. Local combinations work
+offline and are labeled as such. Real synthesis has strict output/count/citation
+validation; it does not manufacture evidence when a provider fails.
+
+Save a mission, moonshot revenue goal, horizon, budget ceiling and weekly
+experiment target. Actual gross revenue remains separately self-reported.
+Creativity/usefulness scores and validation notes are human judgments. Large
+money goals are aspirations, not forecasts, emotional motivation for software,
+or authorization to spend.
+
+The trend radar saves dated public YouTube/web search metadata for predefined
+AI business/skills topics. It does not watch videos, rank real earnings, guarantee
+top-ten quality or predict every trend. Source failures are visible.
+Optional daily radar and autonomous creative-draft templates install disabled;
+the draft agent needs a real model and saves proposals for human review.
+See [IDEA_LAB.md](docs/IDEA_LAB.md), including the dated YouTube research links.
+
+## Connections and integrations
+
+Provider tokens are never committed. Per-user stored credentials use encryption
+with a stable `INTEGRATION_ENCRYPTION_KEY` of at least 32 characters.
+
+| Service | Implemented capability | Prerequisite / limitation |
 |---|---|---|
-| HyperFrames (Apache-2.0) | native `hyperframes_render` tool: HTML composition -> MP4/WebM/GIF via `npx hyperframes` (needs Node 22+, Chrome, FFmpeg) | **tested**: real 1080x1920 H.264 render |
-| VoiceStudio (AGPL-3.0) | MCP over HTTP, set `VOICESTUDIO_MCP_URL`. Install per https://voicestudio.sh | bridge tested with a fake MCP server; real VoiceStudio untested |
-| PhotoCraft (Apache-2.0) | stdio MCP, set `PHOTOCRAFT_CLI` to the `photocraft-cli` binary | bridge tested; real binary untested |
-| REA = *Reverse Engineer Anything* (MIT) | stdio MCP via `npx rea-agents --mcp`, set `REA_MCP=1` | bridge tested; real server untested. This is NOT the realtime editing agent |
-| Hypit | **not integrated**: it is a skill for coding agents (Claude Code/Codex) with its own license, not a runnable node | - |
-| Yjs realtime co-editing | **not built** | - |
+| Google Gmail/Calendar | Read/search; approved drafts, sends, event creation | OAuth app, user consent, scopes; no event-change push trigger |
+| Notion | Search, paginated direct-child page reads, approved child-page creation | User's internal integration and explicitly shared pages; no recursive workspace crawl |
+| Apollo | Bounded prospect search | Account API key; no email/phone enrichment |
+| Stripe account tools | Exact-email customer lookup and approved draft invoice + line item | Per-user key; no finalize, send or charge |
+| Canva | OAuth, design metadata, approved blank design and export jobs | Approved vendor app/scopes; no bulk generation |
+| LinkedIn | OAuth member connection, approved single public text post | OpenID Connect + Share on LinkedIn products; no scheduled/multi-network publisher |
+| Whisper.cpp | Actual local PCM WAV transcription | `WHISPER_CPP_PATH`, `WHISPER_MODEL_PATH`; 16-bit PCM WAV, max 50 MiB |
+| HyperFrames | Approved HTML to MP4/WebM/GIF tool | CLI, Chrome, FFmpeg and output permissions |
+| VoiceStudio / PhotoCraft / REA | Optional MCP bridge configuration | Real service/binary required; bridge availability is not native synthesis/PSD editing |
+| Hypit / Repurpose.io | No runnable native integration | No fake endpoint, clone operation or success fallback |
 
-The `video_director` agent writes and renders HyperFrames compositions. Tests: `npx tsx scripts/test-mcp.ts`, `npx tsx scripts/test-media.ts`.
+REA in the optional MCP bridge means **Reverse Engineer Anything**, not a
+implemented collaborative editor. Socket.io canvas suggestions are separate.
+Yjs packages are present, but realtime multi-user co-editing is not built.
 
-### Free fleet skills
+Detailed guides:
+[Google](docs/GOOGLE_INTEGRATION.md),
+[Notion](docs/NOTION_INTEGRATION.md),
+[Sales](docs/SALES_INTEGRATIONS.md),
+[Canva and publishing](docs/CANVA_AND_PUBLISHING.md),
+[Morgan playbook](docs/AGENT_PLAYBOOK.md).
+Provider-mocked tests do not establish that an unconfigured account is connected.
 
-The app registers the 15 runnable, no-key fleet entries from the capability inventory as native tools: DuckDuckGo/Hacker News/arXiv search, DuckDuckGo-backed SearXNG compatibility search, limited public username checks, public-source OSINT, npm/PyPI/crates.io metadata, passive security-header checks, Reddit/RSS reads, one-shot feed snapshots, basic page-text extraction, bounded parallel page fetches, arXiv references with a LaTeX starter, local nucleotide statistics, and data-broker opt-out templates. Public fetches use the SSRF-protected `safeFetch`; page extraction does not execute JavaScript, and the parallel fetcher is not a shell. Header checks only make a GET request, require an ownership/authorization confirmation, and still require human approval.
+## MCP and OpenClaw interoperability
 
-The other 19 fleet entries are guidance-only prompts, not runnable integrations. `/api/skills` and the MCP `list_skills` tool report them as `prompt_only`; optional VoiceStudio, PhotoCraft, and REA MCPs show setup and live connection status. The app does not claim that prompt-only tools, Hypit, external publisher/calendar services, or a persistent feed watcher are implemented.
+The app is both an MCP client and a token-protected MCP server:
 
-## Self-hosted agent hub: MCP server, MCP import, OAuth in
+- `POST /mcp`: Streamable HTTP with a bearer access token.
+- `read`: inspect agents, threads, skills, time audit, lab and other scoped data.
+- `run`: talk to agents and start reviewable runs.
+- `admin`: edit manifests/import MCP/manage automations/call **safe** tools.
+- Approval-required tools still need authenticated-app approval, even with admin.
 
-Everything Base44 did for agents now runs here, free and self-hosted. Other agents (OpenClaw, Claude, anything that speaks MCP) can join, see and change it.
+Create a token or OAuth client in **Connect**. OAuth `/oauth/token` supports
+`client_credentials` with client-secret Basic or POST authentication and one-hour
+tokens. Discovery is available at `/.well-known/oauth-authorization-server` and
+`/.well-known/oauth-protected-resource`. Authorization-code + PKCE interactive
+sign-in is **not implemented**; clients that require only that flow need a
+different supported connection mode.
 
-- **MCP server**: `POST /mcp` (streamable HTTP, stateless, `Authorization: Bearer <token>`). Tools: `list_agents`, `get_agent`, `upsert_agent`, `reset_agent`, `list_tools`, `run_agent`, `list_threads`, `get_thread`, `list_action_log`, `list_time_audit`, `log_time_audit`, `call_tool`, `list_mcp_servers`, `import_mcp_server`, `remove_mcp_server`. Runs started over MCP show up in the Agents tab like any other conversation.
-- **Scopes**: `read` (inspect), `run` (talk to agents), `admin` (edit agent manifests, manage automations, import MCP servers, and call registered safe tools). The admin scope cannot invoke approval-required tools or approve them through MCP; pending approvals must be reviewed in the authenticated app.
-- **OAuth in**: create a client in the **Connect** tab, then `POST /oauth/token` with `grant_type=client_credentials` (client_secret_basic or _post) for a 1-hour bearer token. Discovery: `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`. Long-lived access tokens can be minted in the same tab. Headless setup: set `MCP_ADMIN_TOKEN` (24+ chars) in `.env`. *Not implemented*: the interactive authorization-code + PKCE flow some hosted MCP clients expect; use client_credentials or a token.
-- **MCP import**: Connect tab or `import_mcp_server`; accepts one server or a Claude-Desktop-style `mcpServers` block. HTTP servers are always allowed; local-command servers need `ALLOW_STDIO_IMPORT=1`. Imported servers persist in `DATA_DIR/mcp-servers.json` (may contain headers/secrets; file mode 600 on POSIX).
-- **Security**: `/mcp` always requires a token, but the token-minting API under `/api` is open when `CLERK_SECRET_KEY` is unset. Put the server behind Tailscale/a firewall or enable Clerk before exposing it.
-- **Tasks**: `make help` (or the matching `npm` scripts). `npm test` boots a throwaway server and runs all e2e suites. `make` itself was not run on this Windows machine.
-## Automations (scheduler)
+Set a private `MCP_ADMIN_TOKEN` (24+ characters) only for trusted headless setup.
+Never put tokens in repository files or copy them into public issues.
 
-Cron-scheduled (5-field, **UTC**) agent runs or tool calls, replacing Base44 scheduled automations. Manage via `/api/automations` or the MCP tools `list_automations`, `upsert_automation` (admin), `run_automation`, `automation_runs`, `delete_automation`. Templates (daily report, research digest, memory check, House Manager/Content/Revenue briefings, AI trend radar and creative idea drafts) install disabled. Unattended agent runs never auto-approve risky tools; they end as `awaiting_approval`. Direct tool automations are restricted to registered tools marked safe (checked both when saved and when run); approval-required tools are rejected. The **Automations** tab supports create, edit, enable/disable, templates, run-now and run history. The next occurrence of a five-field cron expression is displayed in UTC. Set `SCHEDULER=off` to disable the ticker. Not ported: Base44-entity triggers (no native equivalent), data-change triggers (use `POST /api/automations/:id/trigger` from a webhook), and scheduled LinkedIn publishing. LinkedIn supports only single approval-gated text posts through an agent. Google Calendar event-change push notifications are not implemented.
+Imports accept a server definition or a Claude-Desktop-style `mcpServers` block.
+Tools are namespaced `<server>__<tool>`. Imported tools require approval; clients
+cannot mark their own tools safe. Local-command imports require explicit
+`ALLOW_STDIO_IMPORT=1` and execute code on this host. Configuration persists in
+`DATA_DIR/mcp-servers.json`, which can contain secrets: protect/back it up.
 
-## Morgan agent playbook implementation
+For OpenClaw or another MCP client, configure this server's actual base URL,
+bearer token and supported Streamable HTTP transport in that client's settings.
+No specific unverified OpenClaw configuration shape is assumed here.
 
-`agents/morgan_40_roster.json` adds the 40 roles listed in the attached House, Content, Revenue, Operations, and Growth breakdown, plus dedicated Content Engine and Revenue Agent core personas (42 new runnable personas; House Manager is included in the 40). They are editable agent manifests with least-privilege access to existing tools, not 42 persistent background processes. Each states its unavailable integrations and must produce drafts/plans rather than claiming external work. The runtime requires app approval for external or potentially billable tools. None of the templates are enabled by default.
+## Workflow canvas and API deployment
 
-The attached playbook names Gmail, Google Calendar, Notion, Apollo, Stripe, invoicing, Whisper, Canva, Repurpose.io, social publishing, and other services. Gmail + Calendar and Canva + LinkedIn use per-user OAuth; Notion uses a per-user internal integration; Apollo and Stripe accept per-user API keys; Whisper uses a local whisper.cpp installation. Gmail sends, calendar writes, Notion page creation, Stripe draft invoices, Canva design/export creation, and LinkedIn text posts require app approval. Apollo prospect search returns no contact emails or phone numbers. This build does not provide Canva bulk generation, Repurpose.io, multi-network publishing, scheduled LinkedIn posts, or any unavailable-provider fallback. Provider credentials and approval may be required; see `docs/GOOGLE_INTEGRATION.md`, `docs/NOTION_INTEGRATION.md`, `docs/SALES_INTEGRATIONS.md`, and `docs/CANVA_AND_PUBLISHING.md`. Model instructions are not integrations.
+The original DAG canvas connects text prompt enhancement, FLUX image generation,
+background removal, upscaling and HTML preview. Cycles fail validation.
+Text now uses the same Ollama/Groq/OpenAI-compatible router as agents.
 
-## Action log and time audit
+FLUX requires `HF_TOKEN` and a compatible reachable provider; without it the
+existing image node explicitly returns a placeholder. Background removal uses
+the local package; failures report a passthrough engine. Sharp upscaling is
+Lanczos resampling, **not** generative Real-ESRGAN; configured Replicate is
+optional and may charge. A 4x resize is not proof of recovered image detail.
 
-Agent tool invocations, approval requests/decisions, and automation outcomes are recorded in the user-scoped `agent.db` audit table. The log stores action names/status/timestamps, not tool arguments or private outputs; inspect it in **Action log**, `/api/agent/action-log`, or MCP `list_action_log`. It is not a filesystem `/memory` directory.
+**Deploy API** saves a workflow and issues a workflow-scoped key once. Calling
+`POST /api/workflows/:id/run` requires its `x-api-key` and consumes a configured
+credit. Copy the actual URL/key from the UI; do not use placeholder public URLs.
+This provisions a route in your running server, not a cloud deployment or a
+complete storefront. The optional billing hook has no full subscription/payment
+webhook lifecycle. Model prompts and an endpoint do not establish market demand.
 
-**Time audit** lets the user manually record 30-minute blocks with activity, energy (1–10), estimated value, and a complaint/note. The page summarizes the last 48 hours and includes a saved, per-weekend checklist with progress, custom tasks and evidence notes. The audit is user-entered only; it does not track computer activity. Entries are editable and overlapping blocks are rejected.
+## Storage, privacy and production safety
 
-**Idea Finder** combines natural-language briefs, public business/GitHub links, permitted pasted Instagram/D&B content, D-U-N-S context, image descriptions and time-audit evidence into three or ten saved hypotheses. Local combinations work without a model; configured model synthesis and public fetching/search are explicitly opt-in. Optional image understanding needs a vision-capable `IDEA_VISION_MODEL`; otherwise the user supplies a description. Mission/aspirational money goals, separate self-reported actual revenue, human creativity/usefulness scoring, experiment reviews and dated YouTube/web trend snapshots are persisted. Optional daily radar and creative-draft templates install disabled and preserve existing approval boundaries. The `$500 × 40` example is arithmetic, not a forecast. See [the full lab guide and dated YouTube research](docs/IDEA_LAB.md) for limits, APIs, setup and source links.
+| Location | Contents |
+|---|---|
+| `DATA_DIR/agent.db` | Threads/messages, approvals, memories, automations/history, audit, connections, time audit, lab and Mega pack metadata |
+| `DATA_DIR/nodular.db` | Default SQLite workflow/user/key/credit/run store |
+| `DATA_DIR/agents` | Runtime manifest overrides |
+| `DATA_DIR/mcp-servers.json` | Persisted imported MCP definitions, possibly secret headers |
+| `DATA_DIR/mega/<id>` | Saved PNG draft cards; owner-checked API downloads |
+| `DATA_DIR/outputs` | Existing rendered/workflow output files |
+| `.env` | Local server setup and private credentials; ignored by Git |
+
+Supabase optionally replaces the **workflow store only**. Agent/chat/automation/
+integration databases remain local SQLite. Run a single application/scheduler
+instance unless you implement distributed locking and migrate all local state.
+Back up the entire data directory, `.env`, stable encryption key and any
+Supabase data, using access-controlled storage. Stop/quiesce writes or use a
+proper SQLite backup procedure for a consistent copy. Changing/losing the
+encryption key makes saved integration credentials unreadable.
+
+**Without `CLERK_SECRET_KEY`, `/api` is local-user open mode**, including token
+minting and management. Do not expose it directly to the internet. Use a firewall/
+private network, or configure Clerk backend and matching frontend publishable key.
+Restrict `CORS_ORIGIN`, use HTTPS, protect provider/model endpoints, and review
+which operators can edit server-wide manifests/import executable MCP servers.
+Clerk sign-in alone is not a complete multi-tenant admin role system.
+
+The existing `/outputs/:name` file surface is public-by-URL and cacheable; protect
+it at a reverse proxy or avoid sensitive rendered/workflow content. Mega PNG
+cards use a distinct owner-checked `/api` route, but an approved rendered MP4 uses
+the existing output surface. Screenshot pixels are not retained by image analysis;
+reviewed descriptions and supplied notes can be persisted in reports/messages.
+Do not treat all workspace outputs as confidential simply because API routes
+require sign-in.
+
+Audit records contain action names/status/timestamps, not complete arguments or
+private outputs. Other tables deliberately retain report/conversation content.
+An audit log is not a filesystem `/memory` directory.
+
+Never commit `.env`, provider secrets, database files, model weights, captured
+screenshots, `node_modules`, or generated `dist`. Clone the source and restore
+local configuration/data separately on another machine.
+
+## Architecture and development
+
+```text
+src/App.tsx                 Page navigation and screenshot handoff
+src/agents/                Agents, Connect, automations, audit, lab, browser, Mega UI
+src/lib/screen-capture.ts   User-permission single-frame capture and cleanup
+src/canvas, editor, nodes   Workflow canvas, Monaco and preview
+server/index.ts            Fastify bootstrap, auth, static output, native routes
+server/agent/llm.ts         Shared router, tools, structured text, strict vision
+server/agent/runtime.ts     Runs, delegation, approvals and exact-action requests
+server/agent/tools.ts       Tool registry, web search, safeFetch
+server/agent/models.ts      Honest diagnostics and synthetic inference tests
+server/agent/mega.ts        Persisted native content chain and approved render wrapper
+server/agent/idea-lab.ts    Evidence, mission, trend snapshots, reviews and image analysis
+server/agent/automations.ts UTC cron scheduler and execution history
+server/agent/mcp*.ts        MCP client bridge and scoped server
+server/agent/db.ts          Local agent SQLite schema
+server/store.ts            Workflow SQLite/Supabase store
+server/services.ts         Workflow model/image engines
+server/pipeline.ts         Topological workflow execution
+agents, config, docs        Editable personas, operator configuration and guides
+scripts                    Regression harness and opt-in live checks
+```
+
+```powershell
+npm test
+npx tsc --noEmit
+npm run build
+git diff --check
+```
+
+`npm test` creates a temporary mock-provider server and databases, exercises agent/
+MCP/approval boundaries, integrations, automations, workflow, audit, lab, capture
+cleanup, model diagnostics and Mega persistence/approval tests, then cleans up.
+It intentionally does not download real models or call your private accounts.
+Synthetic browser tests do not replace manually accepting/declining your browser's
+actual screen permission picker. `npm run models:test` is an explicit live model
+check and is separate from the offline suite.
+
+Docker, Fly and Railway examples are in [DEPLOY.md](DEPLOY.md). A container's
+`127.0.0.1` is the container, not the Windows host: use a reachable Ollama address
+such as `host.docker.internal` where supported. Runtime `.env` and model weights
+are not part of the image. Install renderer/transcriber dependencies deliberately
+on the execution host. See [ARCHITECTURE.md](ARCHITECTURE.md) for boundaries.
+
+## Troubleshooting
+
+| Symptom | Action |
+|---|---|
+| Changes absent on GitHub | Select the actual pushed feature branch, not the default branch. The root README links to the runnable app directory. |
+| Mock banner / no autonomous drafts | Start Ollama, run model configuration/tests, restart the server; verify `LLM_PROVIDERS` is not `none`. |
+| Model installed but inference fails | Check capabilities, model name, available memory and Connect test errors. Installed is not the same as loaded/responding. |
+| Image needs manual description | Configure/test `IDEA_VISION_MODEL`; ordinary text models cannot read pixels. |
+| Blank embedded page | The site may reject framing; open your own tab and use the explicit capture picker. |
+| No screen-capture picker | Use desktop Chrome/Edge or another supporting browser on HTTPS/localhost; platform policy may block it. Upload a screenshot instead. |
+| AI returns invalid drafts/citations | Refine the brief or use a stronger compatible model. Errors remain visible; offline templates are a separate explicit choice. |
+| Automation did not execute | Check enabled status, UTC next run, server uptime, `SCHEDULER` and saved errors/approvals. |
+| MP4 unavailable | Approve the exact render, then inspect Chrome/FFmpeg/HyperFrames/CDN errors; an HTML draft is not video. |
+| OAuth not connected | Follow that provider's guide, verify callback URL, scopes/products, encryption key and user consent. |
+| Can't transcribe audio | Configure actual Whisper.cpp paths and a compatible 16-bit PCM WAV; no fabricated transcript fallback exists. |
+| Old UI / missing asset after rebuild | Finish the build, restart the backend's production static-file registration, then reload the page. |
+
+This repository ships source and tested native paths, not guaranteed provider
+accounts, sales results, every named fleet integration, or a finished commercial
+deployment. Review claims, permissions, model output and customer evidence before
+acting on them.

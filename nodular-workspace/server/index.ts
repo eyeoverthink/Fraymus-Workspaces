@@ -24,6 +24,8 @@ import { registerSalesRoutes, registerSalesTools } from './agent/sales'
 import { registerCanvaRoutes, registerCanvaTools } from './agent/canva'
 import { registerLinkedInRoutes, registerLinkedInTools } from './agent/linkedin'
 import { registerTranscriptionRoutes, registerTranscriptionTools } from './agent/transcription'
+import { registerModelRoutes } from './agent/models'
+import { registerMegaRoutes, registerMegaTools } from './agent/mega'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -254,6 +256,7 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
 })
 
 registerMediaTools()
+registerMegaTools()
 registerFleetSkills()
 registerGoogleTools()
 registerNotionTools()
@@ -270,6 +273,8 @@ registerSalesRoutes(fastify)
 registerCanvaRoutes(fastify)
 registerLinkedInRoutes(fastify)
 registerTranscriptionRoutes(fastify)
+registerModelRoutes(fastify)
+registerMegaRoutes(fastify)
 registerAccessRoutes(fastify)
 registerAgentRoutes(fastify)
 registerGoogleRoutes(fastify)

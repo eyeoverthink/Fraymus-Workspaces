@@ -1,26 +1,15 @@
 import sharp from 'sharp'
+import { chat } from './agent/llm'
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_SYSTEM = 'You are a FLUX prompt engineer. Convert user ideas into detailed, photorealistic FLUX.1 schnell prompts. Be specific about lighting, camera, texture. Output only the prompt.'
 
-export async function runLlama(prompt: string, system = DEFAULT_SYSTEM): Promise<{ text: string; mocked?: boolean }> {
-  const key = process.env.GROQ_API_KEY
-  if (!key) {
+export async function runLlama(prompt: string, system = DEFAULT_SYSTEM): Promise<{ text: string; mocked?: boolean; provider?: string; model?: string }> {
+  const result = await chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], [], undefined, { maxTokens: 600 })
+  if (result.provider === 'mock') {
     return { text: `Photorealistic ${prompt.slice(0, 200)}, UGC mirror selfie, iPhone flash, natural skin texture, 8k, ultra detailed`, mocked: true }
   }
-  const r = await fetch(GROQ_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-      max_tokens: 400,
-      temperature: 0.8
-    })
-  })
-  const data: any = await r.json()
-  if (!r.ok) throw new Error(`Groq failed ${r.status}: ${JSON.stringify(data).slice(0, 300)}`)
-  return { text: data.choices?.[0]?.message?.content || prompt }
+  if (!result.content.trim()) throw new Error('Configured model returned no text for the workflow')
+  return { text: result.content, mocked: false, provider: result.provider, model: result.model }
 }
 
 function escapeXml(s: string) {

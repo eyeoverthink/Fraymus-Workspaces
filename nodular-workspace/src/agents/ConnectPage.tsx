@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiFetch, errorText } from '../lib/api'
 import { toast } from '../components/Toasts'
+import ModelsPanel from './ModelsPanel'
 
 const j = (body: any) => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 const call = async (url: string, init?: RequestInit) => {
@@ -457,6 +458,7 @@ export default function ConnectPage() {
   }, [])
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: 16, maxWidth: 900, margin: '0 auto' }}>
+      <ModelsPanel />
       <GoogleAccount />
       <NotionAccount />
       <ApiKeyAccount provider="Apollo" endpoint="/api/integrations/apollo" field="apiKey" title="Apollo · prospect search" placeholder="Apollo API key" />
