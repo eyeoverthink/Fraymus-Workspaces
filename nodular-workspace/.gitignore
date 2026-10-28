@@ -4,4 +4,6 @@ dist
 *.log
 data
 data-test
+# stderr captures such as srv.err (already tracked once; keep it untracked)
 *.err
+srv.err

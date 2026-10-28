@@ -265,7 +265,23 @@ if (existsSync('./dist/index.html')) {
   })
 }
 
-await fastify.listen({ port: PORT, host: '0.0.0.0' })
+const HOST = '0.0.0.0'
+if (!authRequired) {
+  const banner = [
+    '================================================================',
+    'WARNING: authentication is OPEN (CLERK_SECRET_KEY is unset).',
+    `The server is about to listen on ${HOST}:${PORT} (every network interface).`,
+    'All /api routes are unauthenticated, including the MCP token-minting',
+    'API (access tokens and OAuth clients). /mcp still requires a bearer',
+    'token, but anyone who can reach this port can mint one.',
+    'This is the local-development default. Do not expose this port until',
+    'CLERK_SECRET_KEY is set, or the process sits behind a firewall / Tailscale.',
+    '================================================================'
+  ].join('\n')
+  fastify.log.warn(banner)
+  console.warn(banner)
+}
+await fastify.listen({ port: PORT, host: HOST })
 const io = new Server(fastify.server, { cors: { origin: process.env.CORS_ORIGIN?.split(',') || true } })
 // @ts-ignore
 fastify.io = io
@@ -275,4 +291,4 @@ io.on('connection', (socket) => {
   socket.on('rea:request', () => io.emit('rea:suggestion', { suggestion: '💡 REA: Thinking...', timestamp: Date.now() }))
 })
 
-console.log(`NODULAR WORKSPACE on :${PORT} | store=${store.kind} | auth=${authRequired ? 'clerk' : 'open (local user)'}`)
+console.log(`NODULAR WORKSPACE on ${HOST}:${PORT} | store=${store.kind} | auth=${authRequired ? 'clerk' : 'open (local user)'}`)
