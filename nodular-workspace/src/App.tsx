@@ -4,20 +4,31 @@ import MonacoWorkspace from './editor/MonacoWorkspace'
 import LivePreview from './editor/LivePreview'
 import { useWorkflowStore } from './store/useWorkflowStore'
 import { useState } from 'react'
+import { apiFetch, errorText } from './lib/api'
+import { Toasts, toast } from './components/Toasts'
 
 export default function App() {
   const { isRunning, executionLog, deployedUrl, setDeployedUrl } = useWorkflowStore()
   const [showLogs, setShowLogs] = useState(false)
 
   const deployWorkflow = async () => {
-    const res = await fetch('/api/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'ugc-mirror-selfie-v1', nodes: (window as any).nodes || [], edges: (window as any).edges || [] }) })
-    const data = await res.json()
-    const dep = await fetch(`/api/workflows/${data.id}/deploy`, { method: 'POST' })
-    const depData = await dep.json()
-    setDeployedUrl(depData.fullUrl)
-    alert(`Deployed! Endpoint: ${depData.fullUrl}\n\nCurl: ${depData.curl}`)
+    const { nodes, edges } = useWorkflowStore.getState()
+    const clean = nodes.map((n: any) => ({ id: n.id, type: n.type, position: n.position, data: Object.fromEntries(Object.entries(n.data || {}).filter(([k]) => !['lastOutput', 'running', 'imageUrl', 'fileName'].includes(k))) }))
+    try {
+      const res = await apiFetch('/api/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'ugc-mirror-selfie-v1', nodes: clean, edges }) })
+      if (!res.ok) throw new Error(await errorText(res))
+      const data = await res.json()
+      const dep = await apiFetch(`/api/workflows/${data.id}/deploy`, { method: 'POST' })
+      if (!dep.ok) throw new Error(await errorText(dep))
+      const depData = await dep.json()
+      setDeployedUrl(depData.fullUrl)
+      useWorkflowStore.getState().setDeployedCurl(depData.curl)
+      navigator.clipboard?.writeText(depData.curl).catch(() => {})
+      toast('success', 'Deployed. cURL with your API key copied to clipboard - the key is shown only once.')
+    } catch (e: any) {
+      toast('error', 'Deploy failed: ' + e.message)
+    }
   }
-
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr 0.6fr', gridTemplateRows: '100vh', background: '#0a0a0a', color: '#e5e5e5' }}>
       <div style={{ borderRight: '1px solid #222', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -42,6 +53,7 @@ export default function App() {
         </div>
         {deployedUrl && <div style={{ padding: '8px 12px', background: '#22c55e', color: '#000', fontSize: 10, fontWeight: 700 }}>Deployed: {deployedUrl} - POST with {'{ prompt }'}</div>}
       </div>
+      <Toasts />
       <MonacoWorkspace />
       <LivePreview />
     </div>

@@ -11,7 +11,8 @@ create table public.users (
   email text,
   created_at timestamp with time zone default now(),
   plan text default 'free' check (plan in ('free','pro','enterprise')),
-  credits integer default 100 -- free runs
+  credits integer default 100, -- free runs
+  stripe_customer_id text
 );
 
 -- WORKFLOWS - DAG + system prompts = your IP
@@ -68,10 +69,10 @@ alter table public.workflow_runs enable row level security;
 alter table public.users enable row level security;
 
 create policy "Users can manage own workflows" on public.workflows
-  for all using (user_id = auth.uid()::text or auth.uid() is null);
+  for all using (user_id = auth.uid()::text);
 
 create policy "Users can view own runs" on public.workflow_runs
-  for all using (user_id = auth.uid()::text or auth.uid() is null);
+  for all using (user_id = auth.uid()::text);
 
 -- Function to increment runs
 create or replace function increment_workflow_runs(wf_id text)
@@ -83,3 +84,10 @@ $$ language sql;
 create index idx_workflows_user on public.workflows(user_id);
 create index idx_runs_workflow on public.workflow_runs(workflow_id);
 create index idx_runs_user on public.workflow_runs(user_id);
+
+-- Atomically spend one run credit; returns false when out of credits
+create or replace function consume_credit(uid text)
+returns boolean as $$
+  with u as (update public.users set credits = credits - 1 where id = uid and credits > 0 returning 1)
+  select exists(select 1 from u);
+$$ language sql;

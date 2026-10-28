@@ -1,14 +1,13 @@
-
+﻿
 # NODULAR WORKSPACE - FULL IMPLEMENTATION (No Stubs)
 
-5-node chain: Llama Groq (brain) → FLUX schnell (image) → BiRefNet Remover → Real-ESRGAN Upscaler → HTML Preview + Deploy API
+5-node chain: Llama Groq (brain) â†’ FLUX schnell (image) â†’ BiRefNet Remover â†’ Real-ESRGAN Upscaler â†’ HTML Preview + Deploy API
 
 Rebuild of $4M Enhancor Workflows video using 100% FREE 2026 stack.
 
 ## Quick Start
 
-npm i
-cp .env.example .env
+npm i --legacy-peer-deps`ncp .env.example .env
 # Add free keys (optional - works without with mocks + sharp local)
 # GROQ_API_KEY from https://console.groq.com
 # HF_TOKEN from https://huggingface.co/settings/tokens
@@ -35,7 +34,7 @@ Without keys, app still works: Groq returns mock enhanced prompt, FLUX returns S
 
 ## Deploy as Product
 
-Click Deploy API → returns POST /api/workflows/:id/run
+Click Deploy API â†’ returns POST /api/workflows/:id/run
 Curl: curl -X POST http://localhost:3001/api/workflows/ugc-mirror-selfie-v1/run -d '{"prompt":"mirror selfie"}'
 
 This endpoint is your product. Charge per call. System prompt chain is moat.
@@ -47,3 +46,11 @@ Read AGENT_INSTRUCTIONS.md - explains what was built, file map, expectations, ac
 ## Video Concept
 
 Wrapper dies, workflow is IP. System prompt chain is moat, not model. This repo implements that with free models.
+
+
+## Status
+
+See DEPLOY.md for Docker/Fly/Railway and env vars (.env.example).
+Verified: server pipeline, deploy + API-key runs, SQLite persistence, credits, local background removal, UI build.
+Written but untested without your accounts: Supabase store, Clerk auth, Stripe metering/checkout (no webhook), Replicate Real-ESRGAN (sharp lanczos3 is used otherwise), Docker build.
+

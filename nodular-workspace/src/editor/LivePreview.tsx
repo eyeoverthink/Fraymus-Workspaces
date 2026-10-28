@@ -1,14 +1,16 @@
 
 import { useWorkflowStore } from '../store/useWorkflowStore'
 import { useState } from 'react'
+import { toast } from '../components/Toasts'
 
 export default function LivePreview() {
-  const { previewHtml, nodes } = useWorkflowStore() as any
+  const { previewHtml, nodes, deployedCurl, deployedUrl } = useWorkflowStore() as any
   const [copied, setCopied] = useState(false)
   const finalImage = (nodes as any).find((n: any) => n.data?.lastOutput?.imageUrl)?.data.lastOutput.imageUrl || (nodes as any[]).slice().reverse().find((n: any) => n.data?.lastOutput?.imageUrl)?.data.lastOutput?.imageUrl
 
   const copyCurl = () => {
-    const curl = `curl -X POST http://localhost:3001/api/workflows/ugc-mirror-selfie-v1/run -H "Content-Type: application/json" -d '{"prompt":"mirror selfie, vintage denim"}'`
+    if (!deployedCurl) return toast('info', 'Click Deploy API first - the key is generated on deploy')
+    const curl = deployedCurl
     navigator.clipboard.writeText(curl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -28,7 +30,7 @@ export default function LivePreview() {
       </div>
       <div style={{ padding: 12, background: '#0a0a0a', color: '#fff', fontSize: 10, fontFamily: 'monospace' }}>
         <div style={{ color: '#888', marginBottom: 4 }}>DEPLOY AS API ENDPOINT (Your Product):</div>
-        <div>POST /api/workflows/ugc-mirror-selfie-v1/run</div>
+        <div>{deployedUrl ? 'POST ' + deployedUrl : 'Deploy to get your endpoint + API key'}</div>
         <div style={{ color: '#22c55e', marginTop: 4 }}>{`{ "prompt": "mirror selfie" } → { imageUrl, html }`}</div>
         <div style={{ color: '#666', marginTop: 6 }}>This endpoint is the moat. System prompt chain is IP, not model.</div>
       </div>

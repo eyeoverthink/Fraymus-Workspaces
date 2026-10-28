@@ -1,8 +1,16 @@
 
-import { Handle, Position, NodeProps } from '@xyflow/react'
+import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react'
+import { CompareSlider } from '../components/CompareSlider'
+import { toast } from '../components/Toasts'
 
-export function BackgroundRemoverNode({ data, selected }: NodeProps) {
+export function BackgroundRemoverNode({ id, data, selected }: NodeProps) {
   const d = data as any
+  const { updateNodeData } = useReactFlow()
+  const loadFile = (file?: File) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) return toast('error', 'Drop an image file')
+    updateNodeData(id, { imageUrl: URL.createObjectURL(file), fileName: file.name })
+  }
   return (
     <div style={{ 
       width: 300, 
@@ -27,9 +35,18 @@ export function BackgroundRemoverNode({ data, selected }: NodeProps) {
         <div>const blob = await removeBackground(imageBlob)</div>
         <div style={{ color: '#22c55e' }}>→ transparent PNG ready for upscaler</div>
       </div>
+      <label className="nodrag" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); loadFile(e.dataTransfer.files?.[0]) }}
+        style={{ display: 'block', marginTop: 8, padding: 8, border: '1px dashed #4f46e5', borderRadius: 8, fontSize: 10, color: '#a5b4fc', textAlign: 'center', cursor: 'pointer' }}>
+        {d.fileName ? `Input: ${d.fileName} (click to replace)` : 'Drop an image here (or click) to use as input'}
+        <input type="file" accept="image/*" hidden onChange={(e) => loadFile(e.target.files?.[0])} />
+      </label>
+      {d.running && <div style={{ marginTop: 8, fontSize: 10, color: '#818cf8' }}>Removing background...</div>}
+      {d.lastOutput?.error && <div style={{ marginTop: 8, fontSize: 10, color: '#ef4444' }}>{d.lastOutput.error}</div>}
       {d.lastOutput?.imageUrl && (
-        <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #333', background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 0 / 20px 20px' }}>
-          <img src={d.lastOutput.imageUrl} style={{ width: '100%', display: 'block' }} />
+        <div style={{ marginTop: 8 }}>
+          {d.lastOutput.originalUrl
+            ? <CompareSlider before={d.lastOutput.originalUrl} after={d.lastOutput.imageUrl} checkerboard />
+            : <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #333', background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 0 / 20px 20px' }}><img src={d.lastOutput.imageUrl} style={{ width: '100%', display: 'block' }} /></div>}
         </div>
       )}
       <Handle type="target" position={Position.Left} style={{ background: '#6366f1' }} />

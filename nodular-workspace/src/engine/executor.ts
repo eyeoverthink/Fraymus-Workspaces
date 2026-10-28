@@ -1,5 +1,5 @@
 
-import { FREE_REGISTRY } from './registry'
+import { apiFetch, errorText } from '../lib/api'
 
 export type ExecutionResult = {
   nodeId: string
@@ -46,7 +46,7 @@ function topologicalSort(nodes: any[], edges: any[]): string[] {
 export async function executeWorkflow(
   nodes: any[],
   edges: any[],
-  options: { workflowId?: string, onProgress?: (r: ExecutionResult) => void } = {}
+  options: { workflowId?: string, onStart?: (nodeId: string) => void, onProgress?: (r: ExecutionResult) => void } = {}
 ): Promise<WorkflowExecution> {
   const startedAt = Date.now()
   const sorted = topologicalSort(nodes, edges)
@@ -58,6 +58,7 @@ export async function executeWorkflow(
   for (const nodeId of sorted) {
     const node = nodes.find((n: any) => n.id === nodeId)
     if (!node) continue
+    options.onStart?.(nodeId)
     const t0 = Date.now()
     let output: any = null
     let error: string | undefined = undefined
@@ -71,24 +72,24 @@ export async function executeWorkflow(
 
       if (node.type === 'llama' || node.type === 'llama-groq') {
         const prompt = node.data.prompt || lastText || 'UGC mirror selfie, iPhone flash'
-        const res = await fetch('/api/llama', {
+        const res = await apiFetch('/api/llama', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt })
         })
-        if (!res.ok) throw new Error('Llama API failed: ' + res.statusText)
+        if (!res.ok) throw new Error('Llama API failed: ' + await errorText(res))
         output = await res.json()
       }
 
       else if (node.type === 'flux' || node.type === 'flux-schnell') {
         const prompt = lastText || node.data.prompt || 'mirror selfie'
         console.log('[Executor] FLUX prompt:', prompt)
-        const res = await fetch('/api/flux', {
+        const res = await apiFetch('/api/flux', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, model: node.data.model || 'black-forest-labs/FLUX.1-schnell' })
         })
-        if (!res.ok) throw new Error('FLUX failed: ' + await res.text())
+        if (!res.ok) throw new Error('FLUX failed: ' + await errorText(res))
         const blob = await res.blob()
         const imageUrl = URL.createObjectURL(blob)
         output = { imageUrl, prompt, blob }
@@ -100,8 +101,8 @@ export async function executeWorkflow(
         const imageBlob = await fetch(imageUrl).then(r => r.blob())
         const form = new FormData()
         form.append('image', imageBlob)
-        const res = await fetch('/api/remover', { method: 'POST', body: form })
-        if (!res.ok) throw new Error('Remover failed: ' + await res.text())
+        const res = await apiFetch('/api/remover', { method: 'POST', body: form })
+        if (!res.ok) throw new Error('Remover failed: ' + await errorText(res))
         const outBlob = await res.blob()
         const outUrl = URL.createObjectURL(outBlob)
         output = { imageUrl: outUrl, originalUrl: imageUrl }
@@ -114,11 +115,11 @@ export async function executeWorkflow(
         const form = new FormData()
         form.append('image', imageBlob)
         form.append('scale', String(node.data.scale || 4))
-        const res = await fetch('/api/upscaler', { method: 'POST', body: form })
-        if (!res.ok) throw new Error('Upscaler failed: ' + await res.text())
+        const res = await apiFetch('/api/upscaler', { method: 'POST', body: form })
+        if (!res.ok) throw new Error('Upscaler failed: ' + await errorText(res))
         const outBlob = await res.blob()
         const outUrl = URL.createObjectURL(outBlob)
-        output = { imageUrl: outUrl, scale: node.data.scale || 4 }
+        output = { imageUrl: outUrl, originalUrl: imageUrl, scale: node.data.scale || 4, size: res.headers.get('X-Upscale-To') }
       }
 
       else if (node.type === 'htmlPreview' || node.type === 'html-preview') {

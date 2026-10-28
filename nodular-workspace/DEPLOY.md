@@ -1,61 +1,39 @@
+# Deploy
 
-# DEPLOY IN ONE SHOT - For Codex/Devin Dumb Agent
+Copy `.env.example` to `.env` and fill in what you need. Nothing is required to run locally.
 
-## Option 1: Docker (Local prod test)
+## Local
 
-docker-compose up --build
-# Frontend: http://localhost:5173 (vite preview) or http://localhost:3001 serves static
-# Server: http://localhost:3001/health
+    npm install --legacy-peer-deps
+    npm run dev:all          # UI :5173, API :3001
+    npm run test:workflow    # needs the API running
 
-## Option 2: Railway (Recommended free)
+## Docker
 
-1. Install Railway CLI: npm i -g @railway/cli
-2. railway login
-3. railway init
-4. Add env vars in Railway dashboard: GROQ_API_KEY, HF_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_KEY, CLERK_*
-5. railway up
+    docker compose up --build      # http://localhost:3001 (UI + API), data in the nodular-data volume
 
-## Option 3: Fly.io
+## Fly.io
 
-fly launch
-fly secrets set GROQ_API_KEY=... HF_TOKEN=... SUPABASE_URL=... etc
-fly deploy
+    fly launch --no-deploy --copy-config
+    fly volumes create nodular_data --size 3
+    fly secrets set GROQ_API_KEY=... HF_TOKEN=... PUBLIC_URL=https://<app>.fly.dev
+    fly deploy --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_...
 
-## Option 4: Vercel + Separate Server
+SQLite lives on the volume, so run a single machine. For several machines use Supabase instead.
 
-- Frontend: vercel --prod (vite)
-- Server: deploy server/ as separate Node service on Railway
+## Railway
 
-## Supabase Setup (1 min)
+Create a service from this repo (it uses the Dockerfile), add a volume mounted at `/data`, and set the same variables.
 
-1. https://supabase.com -> New project free
-2. SQL Editor -> paste supabase/schema.sql -> Run
-3. Storage -> Create bucket workflow-outputs public
-4. Settings -> API -> copy URL, anon, service_role to .env
+## Supabase (optional, replaces SQLite)
 
-## Clerk Setup (2 min, optional)
+Run `supabase/schema.sql` in the SQL editor, then set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
+The server uses the service key, so keep it secret.
 
-1. https://clerk.com -> New app free
-2. Copy publishable + secret to .env
-3. If no Clerk keys, app runs open with banner - no crash
+## Using a deployed workflow
 
-## Verify Deploy
+Click **Deploy API**. The key is returned once (and copied to the clipboard):
 
-curl http://localhost:3001/health
-# Should return { status: 'ok', freeStack: true }
+    curl -X POST $PUBLIC_URL/api/workflows/<id>/run -H "Content-Type: application/json" -H "x-api-key: nk_..." -d '{"prompt":"your idea"}'
 
-curl -X POST http://localhost:3001/api/workflows/test/run -H "Content-Type: application/json" -d '{"prompt":"mirror selfie"}'
-
-## Production Checklist for Dumb Agent
-
-- [ ] npm run build succeeds
-- [ ] docker build . succeeds
-- [ ] /api/flux works with HF_TOKEN, else returns placeholder SVG (no crash)
-- [ ] /api/remover returns transparent PNG
-- [ ] /api/upscaler returns 4x image with headers X-Upscale-To
-- [ ] /api/rea/suggest broadcasts via Socket.io
-- [ ] Supabase saves workflows and runs
-- [ ] Clerk auth shows Sign In when keys set, else shows orange banner and works open
-- [ ] Deploy endpoint returns curl that works
-
-If any fails, fix in server/index.ts - full implementations, no stubs.
+Each run costs one credit (`FREE_CREDITS` per user). With Stripe configured, successful runs are also reported to the meter named by `STRIPE_METER_EVENT_NAME`.

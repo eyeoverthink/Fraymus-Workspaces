@@ -1,178 +1,123 @@
-
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { Server } from 'socket.io'
-import sharp from 'sharp'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { runLlama, runFlux, runRemover, runUpscaler } from './services'
+import { createStore } from './store'
+import { runPipeline, outputsDir } from './pipeline'
+import { authenticateClerk } from './lib/clerk'
+import { reportRunUsage, createCheckout } from './billing'
 
+const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
-await fastify.register(cors, { origin: '*' })
+await fastify.register(cors, { origin: process.env.CORS_ORIGIN?.split(',') || true })
 await fastify.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } })
+const store = await createStore()
+const authRequired = !!process.env.CLERK_SECRET_KEY
+const LOCAL_USER = 'local'
 
-// In-memory storage for deployed workflows
-const workflows = new Map<string, { id: string, nodes: any[], edges: any[], createdAt: number, runs: number }>()
-const deployed = new Map<string, { workflowId: string, url: string, createdAt: number }>()
+async function currentUser(req: any): Promise<string | null> {
+  if (!authRequired) return LOCAL_USER
+  const a = await authenticateClerk(req)
+  return a.authenticated ? (a.userId as string) : null
+}
 
-// --- 1. GROQ FREE LLAMA - Brain replaces Claude Sonnet ---
-fastify.post('/api/llama', async (req, reply) => {
-  const { prompt } = req.body as any
-  const GROQ_KEY = process.env.GROQ_API_KEY
-  if (!GROQ_KEY) {
-    // Mock for dev without key - still full flow
-    return { text: `Enhanced FLUX prompt from: "${prompt.slice(0,80)}..." -> UGC mirror selfie, iPhone 14 flash, Gen-Z bedroom, messy bun, vintage denim jacket, natural skin texture, photorealistic, 8k, ultra detailed, --ar 4:5`, mocked: true }
+// Every /api route except the deployed run endpoint needs a signed-in user when auth is configured
+fastify.addHook('onRequest', async (req, reply) => {
+  const path = req.url.split('?')[0]
+  if (!path.startsWith('/api/') || /^\/api\/workflows\/[^/]+\/run$/.test(path)) return
+  const uid = await currentUser(req)
+  if (!uid) return reply.status(401).send({ error: 'Sign in required' })
+  ;(req as any).userId = uid
+})
+
+const baseUrl = (req: any) => process.env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workflow'
+
+async function readImageInput(req: any): Promise<{ buffer: Buffer | null; fields: Record<string, any> }> {
+  if (req.isMultipart()) {
+    const file = await req.file()
+    if (!file) return { buffer: null, fields: {} }
+    const buffer = await file.toBuffer()
+    const fields: Record<string, any> = {}
+    for (const [k, v] of Object.entries(file.fields || {})) {
+      if (v && !Array.isArray(v) && (v as any).type === 'field') fields[k] = (v as any).value
+    }
+    return { buffer, fields }
   }
+  const body: any = req.body || {}
+  if (body.imageUrl) {
+    const url = String(body.imageUrl)
+    const res = await fetch(url.startsWith('/') ? `http://127.0.0.1:${PORT}${url}` : url)
+    if (!res.ok) throw new Error('Could not fetch imageUrl')
+    return { buffer: Buffer.from(await res.arrayBuffer()), fields: body }
+  }
+  return { buffer: null, fields: body }
+}
+
+fastify.get('/health', async () => ({ ok: true, store: store.kind }))
+
+fastify.get('/outputs/:name', async (req, reply) => {
+  const { name } = req.params as any
+  if (!/^[\w.-]+\.png$/.test(name) || !existsSync(`${outputsDir}/${name}`)) return reply.status(404).send({ error: 'Not found' })
+  return reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=31536000, immutable').send(readFileSync(`${outputsDir}/${name}`))
+})
+
+fastify.get('/api/me', async (req) => store.ensureUser((req as any).userId))
+
+// --- Node endpoints ---
+fastify.post('/api/llama', async (req, reply) => {
+  const { prompt, systemPrompt } = (req.body as any) || {}
+  if (!prompt) return reply.status(400).send({ error: 'prompt required' })
   try {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are a FLUX prompt engineer. Convert user ideas into detailed, photorealistic FLUX.1 schnell prompts. Be specific about lighting, camera, texture. Output only the prompt.' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 400,
-        temperature: 0.8
-      })
-    })
-    const data: any = await r.json()
-    if (!r.ok) throw new Error(JSON.stringify(data))
-    return { text: data.choices?.[0]?.message?.content || prompt, raw: data }
+    return await runLlama(String(prompt), systemPrompt)
   } catch (e: any) {
-    console.error('Groq error', e)
     return reply.status(500).send({ error: e.message, fallback: `Photorealistic ${prompt}, UGC style, iPhone flash, 4K` })
   }
 })
 
-// --- 2. HF FLUX.1 schnell FREE - replaces Nano Banana ---
 fastify.post('/api/flux', async (req, reply) => {
-  const { prompt } = req.body as any
-  const HF_TOKEN = process.env.HF_TOKEN
-  if (!HF_TOKEN) {
-    // Return placeholder image but full flow - no stub, real PNG
-    const svg = `<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#111"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-family="monospace" font-size="20">FLUX [schnell] FREE\n${prompt.slice(0,40)}\nSet HF_TOKEN for real generation</text></svg>`
-    const png = await sharp(Buffer.from(svg)).png().toBuffer()
-    reply.header('Content-Type', 'image/png').send(png)
-    return
-  }
+  const { prompt } = (req.body as any) || {}
+  if (!prompt) return reply.status(400).send({ error: 'prompt required' })
   try {
-    const r = await fetch('https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 4, guidance_scale: 0 } })
-    })
-    if (!r.ok) {
-      const txt = await r.text()
-      throw new Error(`HF FLUX failed ${r.status}: ${txt}`)
-    }
-    const buf = Buffer.from(await r.arrayBuffer())
-    reply.header('Content-Type', 'image/png').send(buf)
+    const { png, mocked } = await runFlux(String(prompt))
+    return reply.header('Content-Type', 'image/png').header('X-Mocked', String(mocked)).send(png)
   } catch (e: any) {
-    console.error('FLUX error', e)
     return reply.status(500).send({ error: e.message })
   }
 })
 
-// --- 3. BiRefNet Background Remover FREE - replaces Remove.bg ---
 fastify.post('/api/remover', async (req, reply) => {
-  const data = await req.file()
-  if (!data) return reply.status(400).send({ error: 'No image file' })
-  const buffer = await data.toBuffer()
-  const HF_TOKEN = process.env.HF_TOKEN
-
   try {
-    if (HF_TOKEN) {
-      // Try HF RMBG-1.4 - best quality free
-      const r = await fetch('https://api-inference.huggingface.co/models/briaai/RMBG-1.4', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${HF_TOKEN}` },
-        body: new Uint8Array(buffer)
-      })
-      if (r.ok) {
-        const out = Buffer.from(await r.arrayBuffer())
-        // RMBG returns mask - composite to transparent
-        // For MVP, return as is if it's already transparent PNG, else use sharp to make bg transparent using mask
-        reply.header('Content-Type', 'image/png').send(out)
-        return
-      }
-      console.warn('HF RMBG failed, fallback to local sharp')
-    }
-
-    // Fallback FULL LOCAL implementation - no API needed
-    // Use sharp to create transparent version: for demo, we make white-ish pixels transparent and keep subject
-    // In production, replace with @imgly/background-removal-node which uses BiRefNet WASM locally
-    // This is real implementation, not stub - uses sharp composite
-    try {
-      const { removeBackground } = await import('@imgly/background-removal-node')
-      const png = await sharp(buffer).png().toBuffer()
-      const blob = await removeBackground(new Blob([new Uint8Array(png)], { type: 'image/png' }))
-      const out = Buffer.from(await blob.arrayBuffer())
-      reply.header('Content-Type', 'image/png').header('X-Remover', 'imgly-local').send(out)
-      return
-    } catch (err) {
-      console.warn('Local background removal failed, returning original', err)
-    }
-    const outPng = await sharp(buffer).ensureAlpha().png().toBuffer()
-    reply.header('Content-Type', 'image/png').header('X-Remover', 'passthrough').send(outPng)
-
+    const { buffer } = await readImageInput(req)
+    if (!buffer) return reply.status(400).send({ error: 'No image file' })
+    const { png, engine } = await runRemover(buffer)
+    return reply.header('Content-Type', 'image/png').header('X-Remover', engine).send(png)
   } catch (e: any) {
-    console.error('Remover error', e)
     return reply.status(500).send({ error: e.message })
   }
 })
 
-// --- 4. Real-ESRGAN 4x Upscaler FREE - replaces Magnific ---
 fastify.post('/api/upscaler', async (req, reply) => {
-  const data = await req.file()
-  const fields = req.body as any
-  // multipart handling
-  let buffer: Buffer | null = null
-  let scale = 4
-  if (data) {
-    buffer = await data.toBuffer()
-    // @ts-ignore
-    const scaleField = data.fields?.scale?.value || '4'
-    scale = parseInt(scaleField) || 4
-  } else {
-    // JSON fallback
-    const body: any = req.body
-    if (body?.imageUrl) {
-      const res = await fetch(body.imageUrl)
-      buffer = Buffer.from(await res.arrayBuffer())
-      scale = body.scale || 4
-    }
-  }
-  if (!buffer) return reply.status(400).send({ error: 'No image' })
-
   try {
-    const meta = await sharp(buffer).metadata()
-    const w = meta.width || 1024
-    const h = meta.height || 1024
-    const newW = w * scale
-    const newH = h * scale
-    console.log(`Upscaling ${w}x${h} -> ${newW}x${newH} with lanczos3 - FREE sharp`)
-
-    // Full sharp upscaler - real implementation, no stub
-    // In production you can swap with replicate.com/xinntao/realesrgan for true Real-ESRGAN
-    const out = await sharp(buffer)
-      .resize(newW, newH, { kernel: 'lanczos3', fastShrinkOnLoad: false })
-      .png({ compressionLevel: 8 })
-      .toBuffer()
-
-    reply.header('Content-Type', 'image/png')
-    reply.header('X-Upscale-From', `${w}x${h}`)
-    reply.header('X-Upscale-To', `${newW}x${newH}`)
-    reply.send(out)
+    const { buffer, fields } = await readImageInput(req)
+    if (!buffer) return reply.status(400).send({ error: 'No image' })
+    const scale = Math.min(Math.max(parseInt(fields.scale) || 4, 1), 4)
+    const { png, from, to, engine } = await runUpscaler(buffer, scale)
+    return reply.header('Content-Type', 'image/png').header('X-Upscale-From', from).header('X-Upscale-To', to).header('X-Upscaler', engine).send(png)
   } catch (e: any) {
-    console.error('Upscaler error', e)
     return reply.status(500).send({ error: e.message })
   }
 })
 
-// --- 5. REA - Realtime Editing Agent ---
-fastify.post('/api/rea/suggest', async (req, reply) => {
-  const { nodes, edges } = req.body as any
+// --- REA - Realtime Editing Agent ---
+fastify.post('/api/rea/suggest', async (req) => {
+  const { nodes, edges } = (req.body as any) || {}
   const GROQ_KEY = process.env.GROQ_API_KEY
+  const has = (s: string) => nodes?.some((n: any) => String(n.type).includes(s))
 
   let suggestion = '💡 REA: Chain looks good. Run it, then Deploy.'
   let codePatch = '// REA: Add error handling for free tier rate limits'
@@ -180,13 +125,13 @@ fastify.post('/api/rea/suggest', async (req, reply) => {
   if (nodes?.length === 1) {
     suggestion = '💡 REA: You have only brain. Add FLUX [schnell] node - Apache 2.0, 4 steps, FREE vs Nano Banana'
     codePatch = 'nodes.push({ type: "flux-schnell", data: { model: "black-forest-labs/FLUX.1-schnell" } })'
-  } else if (nodes?.length === 2 && nodes.some((n: any) => n.type.includes('flux')) && !nodes.some((n: any) => n.type.includes('remover'))) {
+  } else if (nodes?.length === 2 && has('flux') && !has('remover')) {
     suggestion = '💡 REA: After FLUX, add BiRefNet Remover - makes product shots sellable. Free local WASM.'
     codePatch = 'nodes.push({ type: "remover-birefnet" }) // Free, no API key'
-  } else if (nodes?.some((n: any) => n.type.includes('remover')) && !nodes.some((n: any) => n.type.includes('upscaler'))) {
+  } else if (has('remover') && !has('upscaler')) {
     suggestion = '💡 REA: Add 4x Upscaler - Sharp lanczos3 local, FREE. 1024 → 4096 for Etsy/Shopify listings.'
     codePatch = 'nodes.push({ type: "upscaler-realesrgan", data: { scale: 4 } })'
-  } else if (nodes?.length >= 4 && !nodes.some((n: any) => n.type.includes('html'))) {
+  } else if (nodes?.length >= 4 && !has('html')) {
     suggestion = '💡 REA: Final step - HTML Preview + Deploy. This turns workflow into POST /api/workflows/:id/run - your product moat.'
     codePatch = 'nodes.push({ type: "html-preview" }) // Deployable endpoint'
   } else if (nodes?.length >= 5) {
@@ -194,12 +139,11 @@ fastify.post('/api/rea/suggest', async (req, reply) => {
     codePatch = '// Full chain executable - see executor.ts'
   }
 
-  // Try real Groq if key exists for smarter suggestions
   if (GROQ_KEY && nodes) {
     try {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [
@@ -210,90 +154,107 @@ fastify.post('/api/rea/suggest', async (req, reply) => {
         })
       })
       const data: any = await r.json()
-      if (data.choices?.[0]?.message?.content) {
-        suggestion = '💡 REA: ' + data.choices[0].message.content
-      }
+      if (data.choices?.[0]?.message?.content) suggestion = '💡 REA: ' + data.choices[0].message.content
     } catch {}
   }
 
-  // Broadcast via Socket.io
   // @ts-ignore
   fastify.io?.emit('rea:suggestion', { suggestion, codePatch, timestamp: Date.now() })
-
   return { suggestion, codePatch }
 })
 
-// --- 6. WORKFLOW CRUD + DEPLOY AS API (Your Product) ---
+// --- Workflows: persistence, deploy as API ---
 fastify.post('/api/workflows', async (req, reply) => {
-  const { nodes, edges, name } = req.body as any
-  const id = name?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `wf-${Date.now()}`
-  workflows.set(id, { id, nodes, edges, createdAt: Date.now(), runs: 0 })
-  return { id, url: `/api/workflows/${id}/run`, deployUrl: `/api/workflows/${id}/deploy` }
+  const userId = (req as any).userId as string
+  const { nodes, edges, name } = (req.body as any) || {}
+  if (!Array.isArray(nodes) || !Array.isArray(edges)) return reply.status(400).send({ error: 'nodes and edges required' })
+  const id = `${slug(name || 'workflow')}-${createHash('sha256').update(userId).digest('hex').slice(0, 6)}`
+  await store.ensureUser(userId)
+  const wf = await store.upsertWorkflow({ id, user_id: userId, name: name || id, nodes, edges })
+  return { id: wf.id, url: `/api/workflows/${wf.id}/run`, deployUrl: `/api/workflows/${wf.id}/deploy` }
 })
 
-fastify.get('/api/workflows', async () => {
-  return Array.from(workflows.values())
+fastify.get('/api/workflows', async (req) => store.listWorkflows((req as any).userId))
+fastify.get('/api/runs', async (req) => store.listRuns((req as any).userId, (req.query as any)?.workflowId))
+
+fastify.post('/api/workflows/:id/deploy', async (req, reply) => {
+  const userId = (req as any).userId as string
+  const { id } = req.params as any
+  const wf = await store.getWorkflow(id)
+  if (!wf || wf.user_id !== userId) return reply.status(404).send({ error: 'Workflow not found' })
+  const endpoint = `/api/workflows/${id}/run`
+  const fullUrl = baseUrl(req) + endpoint
+  const apiKey = await store.createApiKey(userId, id, 'deploy')
+  await store.markDeployed(id, fullUrl)
+  return {
+    deployed: true,
+    workflowId: id,
+    endpoint,
+    fullUrl,
+    apiKey,
+    curl: `curl -X POST ${fullUrl} -H "Content-Type: application/json" -H "x-api-key: ${apiKey}" -d '{"prompt":"your idea"}'`,
+    note: 'The API key is shown once. Store it securely.'
+  }
 })
 
 fastify.post('/api/workflows/:id/run', async (req, reply) => {
   const { id } = req.params as any
-  const wf = workflows.get(id)
+  const wf = await store.getWorkflow(id)
   if (!wf) return reply.status(404).send({ error: 'Workflow not found' })
-  wf.runs++
-  // For deployed API, accept prompt override
-  const { prompt } = req.body as any || {}
-  let nodes = wf.nodes
-  if (prompt) {
-    nodes = nodes.map((n: any) => n.type.includes('llama') ? { ...n, data: { ...n.data, prompt } } : n)
+
+  const header = String(req.headers['x-api-key'] || '').trim() || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+  let authorized = false
+  if (header.startsWith('nk_')) {
+    const k = await store.findApiKey(header)
+    authorized = !!k && k.workflow_id === id
+  } else {
+    authorized = (await currentUser(req)) === wf.user_id
   }
-  // In real deploy, this would call executor server-side
-  // For MVP, return workflow definition + execution URL - client runs it, or server runs if HF/Groq keys set
-  return {
-    workflowId: id,
-    status: 'ready',
-    nodes: nodes.length,
-    runs: wf.runs,
-    message: 'Call this endpoint with { prompt } to generate. For full server execution, implement executor in this route.',
-    example: `curl -X POST https://yourapp.com/api/workflows/${id}/run -H "Content-Type: application/json" -d '{"prompt":"mirror selfie"}'`
+  if (!authorized) return reply.status(401).send({ error: 'Valid API key required (x-api-key)' })
+
+  if (!(await store.consumeCredit(wf.user_id))) return reply.status(402).send({ error: 'Out of credits' })
+
+  const { prompt } = (req.body as any) || {}
+  const result = await runPipeline(wf.nodes, wf.edges, { prompt: typeof prompt === 'string' ? prompt : undefined })
+  const runId = await store.saveRun({
+    workflow_id: id, user_id: wf.user_id, status: result.status, input_prompt: prompt ?? null,
+    results: result.results, final_image_url: result.imageUrl ?? null, final_html: result.html ?? null, duration_ms: result.durationMs
+  })
+  if (result.status === 'success') await reportRunUsage(store, wf.user_id)
+
+  const publicUrl = result.imageUrl?.startsWith('/') ? baseUrl(req) + result.imageUrl : result.imageUrl
+  return reply.status(result.status === 'success' ? 200 : 502).send({
+    runId, status: result.status, imageUrl: publicUrl, html: result.html, durationMs: result.durationMs,
+    errors: Object.entries(result.results).filter(([, r]) => r.error).map(([nodeId, r]) => ({ nodeId, error: r.error }))
+  })
+})
+
+fastify.post('/api/billing/checkout', async (req, reply) => {
+  try {
+    return await createCheckout(store, (req as any).userId, process.env.PUBLIC_URL || baseUrl(req))
+  } catch (e: any) {
+    return reply.status(400).send({ error: e.message })
   }
 })
 
-fastify.post('/api/workflows/:id/deploy', async (req, reply) => {
-  const { id } = req.params as any
-  const wf = workflows.get(id)
-  if (!wf) return reply.status(404).send({ error: 'Workflow not found' })
-  const deployUrl = `/api/workflows/${id}/run`
-  deployed.set(id, { workflowId: id, url: deployUrl, createdAt: Date.now() })
-  return {
-    deployed: true,
-    workflowId: id,
-    endpoint: deployUrl,
-    fullUrl: `https://yourapp.com${deployUrl}`,
-    curl: `curl -X POST https://yourapp.com${deployUrl} -H "Content-Type: application/json" -d '{"prompt":"your idea"}'`,
-    docs: 'This endpoint is your product. Every call runs: Llama -> FLUX -> Remover -> Upscaler -> HTML'
-  }
-})
+// Serve the built frontend when present (production / Docker)
+if (existsSync('./dist/index.html')) {
+  const { default: fastifyStatic } = await import('@fastify/static')
+  await fastify.register(fastifyStatic, { root: fileURLToPath(new URL('../dist/', import.meta.url)), wildcard: false })
+  fastify.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'Not found' })
+    return reply.sendFile('index.html')
+  })
+}
 
-await fastify.listen({ port: 3001, host: '0.0.0.0' })
-const io = new Server(fastify.server, { cors: { origin: '*' } })
+await fastify.listen({ port: PORT, host: '0.0.0.0' })
+const io = new Server(fastify.server, { cors: { origin: process.env.CORS_ORIGIN?.split(',') || true } })
 // @ts-ignore
 fastify.io = io
 
 io.on('connection', (socket) => {
-  console.log('Client connected', socket.id)
   socket.on('canvas:update', (data) => socket.broadcast.emit('canvas:update', data))
-  socket.on('rea:request', (data) => {
-    // Trigger REA suggestion on demand
-    io.emit('rea:suggestion', { suggestion: '💡 REA: Thinking...', timestamp: Date.now() })
-  })
+  socket.on('rea:request', () => io.emit('rea:suggestion', { suggestion: '💡 REA: Thinking...', timestamp: Date.now() }))
 })
 
-console.log(`
-🚀 NODULAR WORKSPACE FULL - Running on :3001
-- FREE FLUX schnell (HF) replaces Nano Banana 2
-- FREE Llama 3.3 Groq replaces Claude Sonnet  
-- FREE BiRefNet remover (@imgly) replaces Remove.bg
-- FREE Sharp 4x upscaler replaces Magnific
-- REA live via Socket.io
-- Deploy endpoint: POST /api/workflows/:id/run
-`)
+console.log(`NODULAR WORKSPACE on :${PORT} | store=${store.kind} | auth=${authRequired ? 'clerk' : 'open (local user)'}`)

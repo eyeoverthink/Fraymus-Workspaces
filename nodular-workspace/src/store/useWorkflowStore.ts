@@ -11,6 +11,7 @@ type WorkflowState = {
   isRunning: boolean
   executionLog: any[]
   deployedUrl: string | null
+  deployedCurl: string | null
   setNodes: (n: Node[]) => void
   setEdges: (e: Edge[]) => void
   setCode: (c: string) => void
@@ -19,6 +20,7 @@ type WorkflowState = {
   setIsRunning: (b: boolean) => void
   addLog: (log: any) => void
   setDeployedUrl: (url: string | null) => void
+  setDeployedCurl: (c: string | null) => void
 }
 
 export const useWorkflowStore = create<WorkflowState>((set) => ({
@@ -53,6 +55,7 @@ console.log('Final:', result.finalOutput)
   isRunning: false,
   executionLog: [],
   deployedUrl: null,
+  deployedCurl: null,
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
   setCode: (code) => set({ code }),
@@ -61,4 +64,5 @@ console.log('Final:', result.finalOutput)
   setIsRunning: (b) => set({ isRunning: b }),
   addLog: (log) => set((state) => ({ executionLog: [...state.executionLog, log] })),
   setDeployedUrl: (url) => set({ deployedUrl: url }),
+  setDeployedCurl: (c) => set({ deployedCurl: c }),
 }))

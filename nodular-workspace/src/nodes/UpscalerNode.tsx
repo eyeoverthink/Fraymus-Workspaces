@@ -1,5 +1,6 @@
 
 import { Handle, Position, NodeProps } from '@xyflow/react'
+import { CompareSlider } from '../components/CompareSlider'
 
 export function UpscalerNode({ data, selected }: NodeProps) {
   const d = data as any
@@ -38,9 +39,14 @@ export function UpscalerNode({ data, selected }: NodeProps) {
           <div style={{ fontWeight: 700 }}>PNG</div>
         </div>
       </div>
+      {d.running && <div style={{ marginTop: 8, fontSize: 10, color: '#4ade80' }}>Upscaling...</div>}
+      {d.lastOutput?.error && <div style={{ marginTop: 8, fontSize: 10, color: '#ef4444' }}>{d.lastOutput.error}</div>}
       {d.lastOutput?.imageUrl && (
-        <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #333' }}>
-          <img src={d.lastOutput.imageUrl} style={{ width: '100%', display: 'block' }} />
+        <div style={{ marginTop: 8 }}>
+          {d.lastOutput.originalUrl
+            ? <CompareSlider before={d.lastOutput.originalUrl} after={d.lastOutput.imageUrl} />
+            : <img src={d.lastOutput.imageUrl} style={{ width: '100%', display: 'block', borderRadius: 8 }} />}
+          {d.lastOutput.size && <div style={{ fontSize: 10, color: '#4ade80', marginTop: 4 }}>{d.lastOutput.size}</div>}
         </div>
       )}
       <Handle type="target" position={Position.Left} style={{ background: '#22c55e' }} />

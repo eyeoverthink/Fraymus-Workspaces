@@ -53,4 +53,38 @@ const rea = await fetch(BASE + '/api/rea/suggest', {
 })
 if (!rea.ok) fail('rea ' + rea.status)
 console.log('5 rea ok', JSON.stringify(await rea.json()).slice(0, 120))
+
+// --- Persisted workflow, deploy, and keyed run (full 5-node chain server-side) ---
+const nodes = [
+  { id: '1', type: 'llama-groq', data: { prompt: 'mirror selfie, vintage denim' } },
+  { id: '2', type: 'flux-schnell', data: {} },
+  { id: '3', type: 'remover-birefnet', data: {} },
+  { id: '4', type: 'upscaler-realesrgan', data: { scale: 4 } },
+  { id: '5', type: 'html-preview', data: {} }
+]
+const edges = [['1', '2'], ['2', '3'], ['3', '4'], ['4', '5']].map(([source, target]) => ({ id: `e${source}-${target}`, source, target }))
+const json = { 'Content-Type': 'application/json' }
+const created = await (await fetch(BASE + '/api/workflows', { method: 'POST', headers: json, body: JSON.stringify({ name: 'test-chain', nodes, edges }) })).json()
+if (!created.id) fail('create workflow ' + JSON.stringify(created))
+const listed = await (await fetch(BASE + '/api/workflows')).json()
+if (!listed.some((w) => w.id === created.id)) fail('workflow not persisted')
+const dep = await (await fetch(BASE + `/api/workflows/${created.id}/deploy`, { method: 'POST' })).json()
+if (!dep.apiKey?.startsWith('nk_') || !dep.curl.includes('x-api-key')) fail('deploy ' + JSON.stringify(dep))
+console.log('6 deploy ok', dep.fullUrl)
+
+const bad = await fetch(dep.fullUrl, { method: 'POST', headers: { ...json, 'x-api-key': 'nk_wrong' }, body: '{}' })
+if (bad.status !== 401) fail('bad key should be 401, got ' + bad.status)
+
+const run = await fetch(dep.fullUrl, { method: 'POST', headers: { ...json, 'x-api-key': dep.apiKey }, body: JSON.stringify({ prompt: 'product shot of a sneaker' }) })
+const runBody = await run.json()
+if (!run.ok || runBody.status !== 'success') fail('run ' + JSON.stringify(runBody))
+const finalImg = Buffer.from(await (await fetch(runBody.imageUrl)).arrayBuffer())
+const fm = await sharp(finalImg).metadata()
+if (fm.width !== 4096) fail('final image width ' + fm.width)
+if (!runBody.html) fail('missing html')
+console.log('7 deployed run ok', `${fm.width}x${fm.height}`, runBody.durationMs + 'ms')
+
+const runs = await (await fetch(BASE + `/api/runs?workflowId=${created.id}`)).json()
+if (!runs.length) fail('run not persisted')
+console.log('8 run history ok')
 console.log('ALL PASSED')
