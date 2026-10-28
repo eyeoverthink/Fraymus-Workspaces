@@ -13,6 +13,7 @@ import { reportRunUsage, createCheckout } from './billing'
 import { registerAgentRoutes } from './agent/routes'
 import { initAgents } from './agent/runtime'
 import { initMcp } from './agent/mcp'
+import { startScheduler } from './agent/automations'
 import { registerOAuthRoutes, registerAccessRoutes } from './agent/auth'
 import { registerMcpServer } from './agent/mcp-server'
 import { registerMediaTools } from './agent/media'
@@ -247,6 +248,7 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
 
 registerMediaTools()
 initAgents(store)
+startScheduler()
 initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))
 registerOAuthRoutes(fastify)
 registerMcpServer(fastify)

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { providerStatus } from './llm'
 import { allTools } from './tools'
+import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns, installTemplate, TEMPLATES } from './automations'
 import { mcpStatus, mcpServers, importServers, removeServer } from './mcp'
 import {
   listAgents, getAgent, saveAgentManifest, resetAgentManifest, saveCustomAgent, startRun, decideApproval, listThreads, getThread, deleteThread, listMemories, deleteMemory
@@ -36,6 +37,21 @@ export function registerAgentRoutes(app: FastifyInstance) {
   app.delete('/api/mcp/:name', async (req, reply) => {
     try { return { ok: await removeServer((req.params as any).name) } } catch (e) { return fail(reply, e) }
   })
+  app.get('/api/automations', async (req) => ({ automations: listAutomations((req as any).userId), templates: TEMPLATES.map(({ key, name, cron }) => ({ key, name, cron })) }))
+  app.post('/api/automations', async (req, reply) => {
+    try { return saveAutomation((req as any).userId, req.body as any) } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/automations/template/:key', async (req, reply) => {
+    try { return installTemplate((req as any).userId, (req.params as any).key) } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/automations/:id/run', async (req, reply) => {
+    try { return await runAutomation((req as any).userId, (req.params as any).id, 'manual') } catch (e) { return fail(reply, e) }
+  })
+  app.post('/api/automations/:id/trigger', async (req, reply) => {
+    try { return await runAutomation((req as any).userId, (req.params as any).id, 'webhook') } catch (e) { return fail(reply, e) }
+  })
+  app.get('/api/automations/:id/runs', async (req) => automationRuns((req as any).userId, (req.params as any).id))
+  app.delete('/api/automations/:id', async (req) => ({ ok: deleteAutomation((req as any).userId, (req.params as any).id) }))
   app.post('/api/agent/runs', async (req, reply) => {
     const { agentId, message, threadId } = (req.body as any) || {}
     try { return startRun((req as any).userId, String(agentId || 'concierge'), message, threadId) } catch (e) { return fail(reply, e) }

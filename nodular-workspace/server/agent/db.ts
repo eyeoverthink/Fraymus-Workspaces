@@ -14,6 +14,9 @@ create table if not exists approvals(id text primary key, run_id text, thread_id
 create table if not exists memories(id integer primary key autoincrement, user_id text, agent_id text, text text, tags text, created_at integer);
 create index if not exists idx_mem_user on memories(user_id, id);
 create table if not exists custom_agents(id text primary key, user_id text, json text, created_at integer);
+create table if not exists automations(id text primary key, user_id text not null, name text not null, cron text not null, kind text not null, agent_id text, tool text, payload text, enabled integer default 1, last_minute integer, created_at integer);
+create table if not exists automation_runs(id text primary key, automation_id text not null, user_id text, trigger text, status text, thread_id text, output text, error text, started_at integer, finished_at integer);
+create index if not exists idx_arun on automation_runs(automation_id, started_at);
 create table if not exists access_tokens(id text primary key, user_id text not null, name text, kind text, client_id text, hash text unique not null, scopes text not null, expires_at integer, created_at integer, last_used integer);
 create table if not exists oauth_clients(client_id text primary key, user_id text not null, name text, secret_hash text not null, scopes text not null, created_at integer);
 `)

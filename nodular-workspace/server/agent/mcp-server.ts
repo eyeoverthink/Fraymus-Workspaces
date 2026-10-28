@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod'
 import { can, verifyBearer, type Principal, type Scope } from './auth'
 import { allTools } from './tools'
+import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns } from './automations'
 import { importServers, mcpServers, removeServer } from './mcp'
 import { callToolDirect, decideApproval, getAgent, getThread, listAgents, listThreads, resetAgentManifest, runAgentAndWait, saveAgentManifest } from './runtime'
 
@@ -51,6 +52,13 @@ function buildServer(p: Principal) {
     (a) => importServers(a))
   def('remove_mcp_server', 'admin', 'Disconnect and forget an imported MCP server.', { name: z.string() },
     async ({ name }) => ({ removed: await removeServer(name) }))
+  def('list_automations', 'read', 'List scheduled automations (cron, UTC) with next run and last result.', {}, () => listAutomations(uid))
+  def('upsert_automation', 'admin', 'Create/update a scheduled automation. cron is 5-field UTC (e.g. "0 8 * * *"). kind "agent" needs agentId+prompt; kind "tool" needs tool+args. Unattended agent runs never auto-approve risky tools.',
+    { id: z.string().optional(), name: z.string(), cron: z.string(), kind: z.enum(['agent', 'tool']).optional(), agentId: z.string().optional(), prompt: z.string().optional(), tool: z.string().optional(), args: z.record(z.string(), z.any()).optional(), enabled: z.boolean().optional() },
+    (a) => saveAutomation(uid, a))
+  def('run_automation', 'admin', 'Run an automation now and return its result.', { id: z.string() }, ({ id }) => runAutomation(uid, id, 'manual'))
+  def('automation_runs', 'read', 'Recent run history of an automation.', { id: z.string() }, ({ id }) => automationRuns(uid, id))
+  def('delete_automation', 'admin', 'Delete an automation and its history.', { id: z.string() }, ({ id }) => ({ removed: deleteAutomation(uid, id) }))
   return s
 }
 
