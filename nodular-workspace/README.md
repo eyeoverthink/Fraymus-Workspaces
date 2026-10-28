@@ -7,14 +7,27 @@ Rebuild of $4M Enhancor Workflows video using 100% FREE 2026 stack.
 
 ## Quick Start
 
-npm i --legacy-peer-deps`ncp .env.example .env
-# Add free keys (optional - works without with mocks + sharp local)
-# GROQ_API_KEY from https://console.groq.com
-# HF_TOKEN from https://huggingface.co/settings/tokens
-npm run dev:all
+Node.js 22 or newer is required. The server imports `node:sqlite` (there is no npm package for that), and `package.json` sets `"engines": { "node": ">=22" }`. Node 20 and older fail as soon as the store opens.
 
-Canvas: http://localhost:5173
-Server: http://localhost:3001
+```
+npm i --legacy-peer-deps
+cp .env.example .env
+```
+
+Keys are optional. Without them the app uses mocks and local sharp.
+
+- `GROQ_API_KEY` from https://console.groq.com
+- `HF_TOKEN` from https://huggingface.co/settings/tokens
+
+```
+npm run dev:all
+```
+
+- Canvas: http://localhost:5173
+- Server: http://localhost:3001
+- Health: `curl http://localhost:3001/health` returns `{"ok":true,"store":"sqlite"}` with the default SQLite store. `store` is `"supabase"` when `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are set.
+
+The API listens on `0.0.0.0`. Leaving `CLERK_SECRET_KEY` unset keeps auth open so local dev works without Clerk, and that includes the MCP token-minting API. Do not publish port 3001 until Clerk is configured or the host is on a private network. See Security below.
 
 ## What Was Added (Full, No Stubs)
 
@@ -90,7 +103,7 @@ Everything Base44 did for agents now runs here, free and self-hosted. Other agen
 - **Scopes**: `read` (inspect), `run` (talk to agents), `admin` (edit agents, call any tool, approve, import MCP servers). Admin means full autonomy: only give it to agents you trust.
 - **OAuth in**: create a client in the **Connect** tab, then `POST /oauth/token` with `grant_type=client_credentials` (client_secret_basic or _post) for a 1-hour bearer token. Discovery: `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`. Long-lived access tokens can be minted in the same tab. Headless setup: set `MCP_ADMIN_TOKEN` (24+ chars) in `.env`. *Not implemented*: the interactive authorization-code + PKCE flow some hosted MCP clients expect; use client_credentials or a token.
 - **MCP import**: Connect tab or `import_mcp_server`; accepts one server or a Claude-Desktop-style `mcpServers` block. HTTP servers are always allowed; local-command servers need `ALLOW_STDIO_IMPORT=1`. Imported servers persist in `DATA_DIR/mcp-servers.json` (may contain headers/secrets; file mode 600 on POSIX).
-- **Security**: `/mcp` always requires a token, but the token-minting API under `/api` is open when `CLERK_SECRET_KEY` is unset. Put the server behind Tailscale/a firewall or enable Clerk before exposing it.
+- **Security**: The process binds `0.0.0.0` (every interface). When `CLERK_SECRET_KEY` is unset it does not require a signed-in user, which is what `npm run dev:all` and the test suite rely on, so that behavior is unchanged. Open mode also leaves the MCP token-minting API unauthenticated: anyone who can reach the port can create access tokens and OAuth clients. `/mcp` itself still requires `Authorization: Bearer <token>`. Startup prints a warning in this mode. Before any non-local exposure, set `CLERK_SECRET_KEY` (and `VITE_CLERK_PUBLISHABLE_KEY`) or keep the port on Tailscale or a firewall. `MCP_ADMIN_TOKEN`, if set, is a full-admin bearer.
 - **Tasks**: `make help` (or the matching `npm` scripts). `npm test` boots a throwaway server and runs all e2e suites. `make` itself was not run on this Windows machine.
 ## Automations (scheduler)
 
