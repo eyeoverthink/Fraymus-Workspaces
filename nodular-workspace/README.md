@@ -94,7 +94,7 @@ Everything Base44 did for agents now runs here, free and self-hosted. Other agen
 - **Tasks**: `make help` (or the matching `npm` scripts). `npm test` boots a throwaway server and runs all e2e suites. `make` itself was not run on this Windows machine.
 ## Fraymus OS One studio (portal bridge)
 
-Agents can drive the Fraymus OS One creative studio through the Fraymus Portal (Fraymus-OS-One, branch `fraymus-portal`). Start the studio (`npm start`, 127.0.0.1:4177) and the portal (`cd portal && node src/server.js --http`, 127.0.0.1:4190), then the crew gets three built-in tools:
+Agents can drive the Fraymus OS One creative studio through the Fraymus Portal (Fraymus-OS-One, branch `fraymus-portal`). Start the studio (`npm start`, 127.0.0.1:4177) and the portal (`cd portal && node src/server.js --http`, 127.0.0.1:4191), then the crew gets three built-in tools:
 
 | Tool | Risk | Use |
 | --- | --- | --- |
@@ -102,9 +102,9 @@ Agents can drive the Fraymus OS One creative studio through the Fraymus Portal (
 | `portal_call` | safe | Read-only tools: `studio_health`, `brain_status`, `brain_memory_get`, `brain_think` (dry run only), `opeg_protocol`, `project_list`, `project_get`, `mail_list` |
 | `portal_call_write` | approval | Everything else: `pixel_render`, `project_create`, `site_publish`, `export_zip`, `opeg_execute`, `brain_cortex_chat`, `brain_think` with `persist:true` |
 
-Env: `PORTAL_URL` (default `http://127.0.0.1:4190`), `PORTAL_TOKEN` (if the portal was started with one), `PORTAL_SAFE_TOOLS` (override the read-only list), `PORTAL_ENABLED=0` (hide the tools). If the portal is down the tools return a plain "Fraymus Portal unreachable" error. Each result includes the portal's SHA-256 chained `receipt`. Genesis and Director have prompt guidance for it. Approval tools can't run inside a delegated run, so Director hands write steps back to Genesis.
+Env: `PORTAL_URL` (default `http://127.0.0.1:4191`), `PORTAL_TOKEN` (if the portal was started with one), `PORTAL_SAFE_TOOLS` (override the read-only list), `PORTAL_ENABLED=0` (hide the tools). If the portal is down the tools return a plain "Fraymus Portal unreachable" error. Each result includes the portal's SHA-256 chained `receipt`. Genesis and Director have prompt guidance for it. Approval tools can't run inside a delegated run, so Director hands write steps back to Genesis.
 
-The bridge uses `node:http`, not `fetch()`: port 4190 is on the WHATWG fetch blocked-port list, so `fetch()` (and browsers) refuse it. For the same reason the optional MCP route (`fraymus-portal` in `config/mcp-servers.json`, enabled by `PORTAL_MCP_URL`) only works if the portal runs on another port, e.g. `PORTAL_PORT=4191` and `PORTAL_MCP_URL=http://127.0.0.1:4191/mcp`. Test: `npm run test:portal` against a running server (`EXPECT_PORTAL_DOWN=1` checks the error path).
+The portal's default port is 4191 (`PORTAL_PORT` overrides it; the old default 4190 is on the WHATWG fetch blocked-port list, so browsers and `fetch()` refused it). The bridge uses `node:http`, so it works on any port. The optional MCP route (`fraymus-portal` in `config/mcp-servers.json`) is enabled by `PORTAL_MCP_URL=http://127.0.0.1:4191/mcp`. The studio now requires a login: the portal reads its token from `STUDIO_TOKEN`/`FRAYMUS_STUDIO_TOKEN` or the studio's `data/studio-token` file, so nothing extra is needed here. `brain_think` dry runs through `portal_call` don't change the studio's saved mind, but the portal stages what they learn and the next `brain_think` with `persist:true` (via `portal_call_write`) saves it. Test: `npm run test:portal` against a running server (`EXPECT_PORTAL_DOWN=1` checks the error path).
 
 ## Automations (scheduler)
 

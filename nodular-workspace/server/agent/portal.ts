@@ -1,7 +1,7 @@
 // Fraymus Portal bridge: lets agents (Genesis, Director, ...) call the Fraymus OS One studio
 // through the portal's JSON API (Fraymus-OS-One branch fraymus-portal, `node portal/src/server.js --http`).
 //
-//   PORTAL_URL      default http://127.0.0.1:4190  (the portal only binds to loopback)
+//   PORTAL_URL      default http://127.0.0.1:4191  (the portal only binds to loopback)
 //   PORTAL_TOKEN    optional; sent as Authorization: Bearer <token>
 //   PORTAL_SAFE_TOOLS  optional comma list overriding which portal tools run without approval
 //   PORTAL_ENABLED=0   hide the bridge tools entirely
@@ -17,12 +17,12 @@ import type { Tool } from './tools'
 // which needs user approval.
 const DEFAULT_SAFE = ['studio_health', 'brain_status', 'brain_memory_get', 'brain_think', 'opeg_protocol', 'project_list', 'project_get', 'mail_list']
 export const portalSafe = () => (process.env.PORTAL_SAFE_TOOLS ? process.env.PORTAL_SAFE_TOOLS.split(',').map((s) => s.trim()).filter(Boolean) : DEFAULT_SAFE)
-export const portalBase = () => (process.env.PORTAL_URL || 'http://127.0.0.1:4190').replace(/\/$/, '')
+export const portalBase = () => (process.env.PORTAL_URL || 'http://127.0.0.1:4191').replace(/\/$/, '')
 
 const TOOL_RE = /^[a-z_]{1,64}$/
 
-// Uses node:http(s) rather than fetch(): the portal's default port 4190 is on the WHATWG fetch
-// "bad ports" list (sieve), so fetch() refuses it with "bad port".
+// Uses node:http(s) rather than fetch(): it works on any PORTAL_URL port, including ones on the
+// WHATWG fetch "bad ports" list (e.g. the portal's old default 4190), which fetch() refuses.
 function request(url: URL, method: string, headers: Record<string, string>, body: string | undefined, timeout: number) {
   return new Promise<{ status: number; text: string }>((resolve, reject) => {
     const mod = url.protocol === 'https:' ? https : http

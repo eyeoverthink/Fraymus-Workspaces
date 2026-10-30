@@ -14,6 +14,7 @@
     "test:mcp-server": "node scripts/test-mcp-server.mjs",
     "test:shopify": "node scripts/test-shopify.mjs",
     "test:portal": "node scripts/test-portal.mjs",
+    "test:portal-approval": "node --env-file=.env scripts/test-portal-approval.mjs",
     "clean": "node -e \"for (const d of ['dist','data-test']) require('fs').rmSync(d,{recursive:true,force:true})\""
   },
   "dependencies": {
