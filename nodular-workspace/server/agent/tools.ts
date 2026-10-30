@@ -6,6 +6,7 @@ import { runFlux, runRemover, runUpscaler } from '../services'
 import { saveImage, outputsDir, runPipeline } from '../pipeline'
 import type { Store } from '../store'
 import type { ToolSpec } from './llm'
+import { portalTools } from './portal'
 
 export type ToolCtx = {
   userId: string; agentId: string; threadId: string; depth: number; store: Store
@@ -207,7 +208,7 @@ export function registerTools(tools: Tool[]) {
 export function unregisterTools(prefix: string) {
   for (let i = extra.length - 1; i >= 0; i--) if (extra[i].name.startsWith(prefix)) extra.splice(i, 1)
 }
-export const allTools = () => [...(cache ||= [...builtinTools, ...loadHttpTools()]), ...extra]
+export const allTools = () => [...(cache ||= [...builtinTools, ...portalTools(), ...loadHttpTools()]), ...extra]
 export const matchesTool = (allow: string[], name: string) => allow.some((p) => p === name || (p.endsWith('*') && name.startsWith(p.slice(0, -1))))
 export const getTool = (n: string) => allTools().find((t) => t.name === n)
 export const toolSpec = (t: Tool): ToolSpec => ({ name: t.name, description: t.description, parameters: t.parameters })

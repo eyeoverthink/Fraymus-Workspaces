@@ -19,5 +19,13 @@
     "command": "npx",
     "args": ["-y", "rea-agents@latest", "--mcp"],
     "requires": ["REA_MCP"]
+  },
+  {
+    "name": "fraymus-portal",
+    "description": "Fraymus OS One studio through the Fraymus Portal MCP endpoint (Fraymus-OS-One branch fraymus-portal). Opt-in: set PORTAL_MCP_URL=http://127.0.0.1:4190/mcp. Agents normally use the built-in portal_call tools; this adds the same tools as fraymus-portal__<tool>.",
+    "url": "${ENV:PORTAL_MCP_URL}",
+    "headers": { "Authorization": "Bearer ${ENV:PORTAL_TOKEN}" },
+    "requires": ["PORTAL_MCP_URL"],
+    "safeTools": ["studio_health", "brain_status", "brain_memory_get", "opeg_protocol", "project_list", "project_get", "mail_list"]
   }
 ]

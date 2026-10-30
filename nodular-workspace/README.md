@@ -92,6 +92,20 @@ Everything Base44 did for agents now runs here, free and self-hosted. Other agen
 - **MCP import**: Connect tab or `import_mcp_server`; accepts one server or a Claude-Desktop-style `mcpServers` block. HTTP servers are always allowed; local-command servers need `ALLOW_STDIO_IMPORT=1`. Imported servers persist in `DATA_DIR/mcp-servers.json` (may contain headers/secrets; file mode 600 on POSIX).
 - **Security**: `/mcp` always requires a token, but the token-minting API under `/api` is open when `CLERK_SECRET_KEY` is unset. Put the server behind Tailscale/a firewall or enable Clerk before exposing it.
 - **Tasks**: `make help` (or the matching `npm` scripts). `npm test` boots a throwaway server and runs all e2e suites. `make` itself was not run on this Windows machine.
+## Fraymus OS One studio (portal bridge)
+
+Agents can drive the Fraymus OS One creative studio through the Fraymus Portal (Fraymus-OS-One, branch `fraymus-portal`). Start the studio (`npm start`, 127.0.0.1:4177) and the portal (`cd portal && node src/server.js --http`, 127.0.0.1:4190), then the crew gets three built-in tools:
+
+| Tool | Risk | Use |
+| --- | --- | --- |
+| `portal_list_tools` | safe | List the 16 studio tools and which bridge tool runs each |
+| `portal_call` | safe | Read-only tools: `studio_health`, `brain_status`, `brain_memory_get`, `brain_think` (dry run only), `opeg_protocol`, `project_list`, `project_get`, `mail_list` |
+| `portal_call_write` | approval | Everything else: `pixel_render`, `project_create`, `site_publish`, `export_zip`, `opeg_execute`, `brain_cortex_chat`, `brain_think` with `persist:true` |
+
+Env: `PORTAL_URL` (default `http://127.0.0.1:4190`), `PORTAL_TOKEN` (if the portal was started with one), `PORTAL_SAFE_TOOLS` (override the read-only list), `PORTAL_ENABLED=0` (hide the tools). If the portal is down the tools return a plain "Fraymus Portal unreachable" error. Each result includes the portal's SHA-256 chained `receipt`. Genesis and Director have prompt guidance for it. Approval tools can't run inside a delegated run, so Director hands write steps back to Genesis.
+
+The bridge uses `node:http`, not `fetch()`: port 4190 is on the WHATWG fetch blocked-port list, so `fetch()` (and browsers) refuse it. For the same reason the optional MCP route (`fraymus-portal` in `config/mcp-servers.json`, enabled by `PORTAL_MCP_URL`) only works if the portal runs on another port, e.g. `PORTAL_PORT=4191` and `PORTAL_MCP_URL=http://127.0.0.1:4191/mcp`. Test: `npm run test:portal` against a running server (`EXPECT_PORTAL_DOWN=1` checks the error path).
+
 ## Automations (scheduler)
 
 Cron-scheduled (5-field, **UTC**) agent runs or tool calls, replacing Base44 scheduled automations. Manage via `/api/automations` or the MCP tools `list_automations`, `upsert_automation` (admin), `run_automation`, `automation_runs`, `delete_automation`. Templates (`daily-report`, `six-hour-research`, `heartbeat`) install disabled. Unattended agent runs never auto-approve risky tools; they end as `awaiting_approval`. Tool automations call the tool directly (admin-created only). Set `SCHEDULER=off` to disable the ticker. Not ported: LinkedIn, Google Calendar and Base44-entity triggers (no native equivalent), and data-change triggers (use `POST /api/automations/:id/trigger` from a webhook).
