@@ -77,8 +77,8 @@ export async function runPipeline(nodes: any[], edges: any[], opts: { prompt?: s
         texts[id] = r.text = out.text
       } else if (k === 'flux') {
         const prompt = upstreamText || opts.prompt || node.data?.prompt || 'mirror selfie'
-        const { png, mocked } = await runFlux(prompt)
-        r.engine = mocked ? 'placeholder' : 'hf-flux.1-schnell'; r.mocked = mocked
+        const { png, mocked, engine } = await runFlux(prompt)
+        r.engine = mocked ? 'placeholder' : engine || 'hf-flux'; r.mocked = mocked
         if (opts.strict && mocked) throw new Error('Image model not configured (set HF_TOKEN)')
         buffers[id] = png
         r.imageUrl = await saveImage(png)

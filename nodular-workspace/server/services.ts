@@ -35,23 +35,71 @@ function escapeXml(s: string) {
   return s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] as string))
 }
 
-export async function runFlux(prompt: string): Promise<{ png: Buffer; mocked: boolean }> {
+export async function runFlux(prompt: string): Promise<{ png: Buffer; mocked: boolean; engine?: string }> {
   const token = process.env.HF_TOKEN
   if (!token) {
     const svg = `<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#e5e7eb"/><circle cx="512" cy="430" r="170" fill="#6366f1"/><rect x="332" y="620" width="360" height="260" rx="40" fill="#6366f1"/><text x="50%" y="960" text-anchor="middle" fill="#111" font-family="monospace" font-size="24">FLUX placeholder - set HF_TOKEN: ${escapeXml(prompt.slice(0, 40))}</text></svg>`
     return { png: await sharp(Buffer.from(svg)).png().toBuffer(), mocked: true }
   }
-  // api-inference.huggingface.co was replaced by the router; override with HF_FLUX_URL if your provider differs. [UNVERIFIED without a real token]
-  const url = process.env.HF_FLUX_URL || 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell'
+  // hf-inference no longer serves FLUX.1-schnell (410 "deprecated"). Route through HF Inference Providers instead.
+  // HF_FLUX_PROVIDER: comma-separated order to try (default "nscale,fal-ai"); HF_FLUX_MODEL overrides the model id.
+  // HF_FLUX_URL (legacy) still forces a raw-bytes hf-inference style endpoint.
+  const model = process.env.HF_FLUX_MODEL || 'black-forest-labs/FLUX.1-schnell'
+  const providers = process.env.HF_FLUX_URL ? ['url'] : (process.env.HF_FLUX_PROVIDER || 'nscale,fal-ai').split(',').map((s) => s.trim()).filter(Boolean)
+  const errors: string[] = []
+  for (const provider of providers) {
+    try {
+      const raw = await fluxViaProvider(provider, model, prompt, token)
+      return { png: await sharp(raw).png().toBuffer(), mocked: false, engine: `hf-${provider}:${model.split('/').pop()}` }
+    } catch (e: any) {
+      errors.push(`${provider}: ${e?.message || e}`)
+    }
+  }
+  throw new Error(`HF FLUX failed (${errors.join(' | ').slice(0, 500)})`)
+}
+
+const FAL_IDS: Record<string, string> = {
+  'black-forest-labs/FLUX.1-schnell': 'fal-ai/flux/schnell',
+  'black-forest-labs/FLUX.1-dev': 'fal-ai/flux/dev'
+}
+
+async function fluxViaProvider(provider: string, model: string, prompt: string, token: string): Promise<Buffer> {
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  const signal = AbortSignal.timeout(120000)
+  const steps = /schnell/i.test(model) ? 4 : 28
+  if (provider === 'nscale') {
+    const r = await fetch('https://router.huggingface.co/nscale/v1/images/generations', {
+      signal, method: 'POST', headers,
+      body: JSON.stringify({ model, prompt, size: '1024x1024', response_format: 'b64_json' })
+    })
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`)
+    const j: any = await r.json()
+    const b64 = j?.data?.[0]?.b64_json
+    if (!b64) throw new Error('no image in response')
+    return Buffer.from(b64, 'base64')
+  }
+  if (provider === 'fal-ai') {
+    const id = FAL_IDS[model]
+    if (!id) throw new Error(`no fal-ai mapping for ${model}`)
+    const r = await fetch(`https://router.huggingface.co/fal-ai/${id}`, {
+      signal, method: 'POST', headers,
+      body: JSON.stringify({ prompt, num_inference_steps: steps, image_size: { width: 1024, height: 1024 } })
+    })
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`)
+    const j: any = await r.json()
+    const imgUrl = j?.images?.[0]?.url
+    if (!imgUrl) throw new Error('no image in response')
+    const ir = await fetch(imgUrl, { signal })
+    if (!ir.ok) throw new Error(`image download ${ir.status}`)
+    return Buffer.from(await ir.arrayBuffer())
+  }
+  const url = provider === 'url' ? process.env.HF_FLUX_URL! : `https://router.huggingface.co/${provider}/models/${model}`
   const r = await fetch(url, {
-    signal: AbortSignal.timeout(120000),
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 4, guidance_scale: 0 } })
+    signal, method: 'POST', headers,
+    body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: steps, guidance_scale: 0 } })
   })
-  if (!r.ok) throw new Error(`HF FLUX failed ${r.status}: ${(await r.text()).slice(0, 300)}`)
-  const raw = Buffer.from(await r.arrayBuffer())
-  return { png: await sharp(raw).png().toBuffer(), mocked: false }
+  if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`)
+  return Buffer.from(await r.arrayBuffer())
 }
 
 function removeInWorker(input: Buffer, timeoutMs = 180000): Promise<Buffer> {
