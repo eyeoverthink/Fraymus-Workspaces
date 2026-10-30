@@ -60,7 +60,7 @@ async function callOpenAI(name: string, base: string, key: string, messages: Msg
         : m.role === 'tool' ? { role: 'tool', tool_call_id: m.tool_call_id, content: m.content } : { role: m.role, content: m.content })
   }
   const r = await fetch(`${base.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000)
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, ...(process.env.OPENAI_USER_AGENT ? { 'User-Agent': process.env.OPENAI_USER_AGENT } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000)
   })
   if (!r.ok) throw new Error(`${name} ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const j: any = await r.json()

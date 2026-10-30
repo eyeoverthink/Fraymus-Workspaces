@@ -7,6 +7,9 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { runLlama, runFlux, runRemover, runUpscaler } from './services'
 import { createStore } from './store'
+import shopifyWebhooks from './shopify'
+import { registerBuyerRoutes } from './buyer'
+import { createClerkClient } from '@clerk/backend'
 import { runPipeline, outputsDir } from './pipeline'
 import { authenticateClerk } from './lib/clerk'
 import { reportRunUsage, createCheckout } from './billing'
@@ -75,7 +78,28 @@ fastify.get('/outputs/:name', async (req, reply) => {
   return reply.header('Content-Type', types[ext]).header('Cache-Control', 'public, max-age=31536000, immutable').send(createReadStream(`${outputsDir}/${name}`))
 })
 
-fastify.get('/api/me', async (req) => store.ensureUser((req as any).userId))
+// With Clerk, store the verified primary email so Shopify buyers are matched to the account (and pre-signup purchases merge in)
+const clerk = process.env.CLERK_SECRET_KEY ? createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY }) : null
+async function verifiedEmail(userId: string): Promise<string | null> {
+  if (!clerk || userId === LOCAL_USER) return null
+  try {
+    const u = await clerk.users.getUser(userId)
+    const p = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
+    return p && p.verification?.status === 'verified' ? p.emailAddress : null
+  } catch { return null }
+}
+fastify.get('/api/me', async (req) => {
+  const id = (req as any).userId
+  const u = await store.ensureUser(id)
+  if (store.kind === 'sqlite' && clerk && !u.email) {
+    const email = await verifiedEmail(id)
+    if (email) return store.linkEmail(id, email)
+  }
+  return u
+})
+
+await fastify.register(shopifyWebhooks, { store })
+registerBuyerRoutes(fastify, store, { baseUrl })
 
 // --- Node endpoints ---
 fastify.post('/api/llama', async (req, reply) => {
@@ -224,7 +248,13 @@ fastify.post('/api/workflows/:id/run', async (req, reply) => {
   if (!(await store.consumeCredit(wf.user_id))) return reply.status(402).send({ error: 'Out of credits' })
 
   const { prompt } = (req.body as any) || {}
-  const result = await runPipeline(wf.nodes, wf.edges, { prompt: typeof prompt === 'string' ? prompt : undefined })
+  let result
+  try {
+    result = await runPipeline(wf.nodes, wf.edges, { prompt: typeof prompt === 'string' ? prompt : undefined })
+  } catch (e: any) {
+    result = { status: 'failed' as const, results: { pipeline: { type: 'pipeline', durationMs: 0, error: e.message } }, durationMs: 0, imageUrl: undefined, html: undefined }
+  }
+  if (result.status !== 'success') await store.refundCredit(wf.user_id) // failed runs don't cost a credit
   const runId = await store.saveRun({
     workflow_id: id, user_id: wf.user_id, status: result.status, input_prompt: prompt ?? null,
     results: result.results, final_image_url: result.imageUrl ?? null, final_html: result.html ?? null, duration_ms: result.durationMs
@@ -233,7 +263,7 @@ fastify.post('/api/workflows/:id/run', async (req, reply) => {
 
   const publicUrl = result.imageUrl?.startsWith('/') ? baseUrl(req) + result.imageUrl : result.imageUrl
   return reply.status(result.status === 'success' ? 200 : 502).send({
-    runId, status: result.status, imageUrl: publicUrl, html: result.html, durationMs: result.durationMs,
+    runId, status: result.status, refunded: result.status !== 'success', imageUrl: publicUrl, html: result.html, durationMs: result.durationMs,
     errors: Object.entries(result.results).filter(([, r]) => r.error).map(([nodeId, r]) => ({ nodeId, error: r.error }))
   })
 })
@@ -265,7 +295,7 @@ if (existsSync('./dist/index.html')) {
   })
 }
 
-await fastify.listen({ port: PORT, host: '0.0.0.0' })
+await fastify.listen({ port: PORT, host: process.env.HOST || '0.0.0.0' })
 const io = new Server(fastify.server, { cors: { origin: process.env.CORS_ORIGIN?.split(',') || true } })
 // @ts-ignore
 fastify.io = io

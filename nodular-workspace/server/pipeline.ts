@@ -6,7 +6,7 @@ import { uploadImage } from './lib/supabase'
 const OUT_DIR = `${process.env.DATA_DIR || './data'}/outputs`
 
 export async function saveImage(png: Buffer): Promise<string> {
-  const name = `${Date.now()}-${randomBytes(4).toString('hex')}.png`
+  const name = `${Date.now()}-${randomBytes(12).toString('hex')}.png`
   const remote = await uploadImage(png, name)
   if (remote) return remote
   mkdirSync(OUT_DIR, { recursive: true })
@@ -41,7 +41,7 @@ export function topoSort(nodes: any[], edges: any[]): string[] {
 
 export type PipelineResult = {
   status: 'success' | 'failed'
-  results: Record<string, { type: string; durationMs: number; error?: string; text?: string; imageUrl?: string }>
+  results: Record<string, { type: string; durationMs: number; error?: string; text?: string; imageUrl?: string; engine?: string; mocked?: boolean }>
   imageUrl?: string
   html?: string
   durationMs: number
@@ -49,7 +49,7 @@ export type PipelineResult = {
 
 const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string))
 
-export async function runPipeline(nodes: any[], edges: any[], opts: { prompt?: string; image?: Buffer } = {}): Promise<PipelineResult> {
+export async function runPipeline(nodes: any[], edges: any[], opts: { prompt?: string; image?: Buffer; strict?: boolean } = {}): Promise<PipelineResult> {
   const t0 = Date.now()
   const order = topoSort(nodes, edges)
   const buffers: Record<string, Buffer> = {}
@@ -72,20 +72,28 @@ export async function runPipeline(nodes: any[], edges: any[], opts: { prompt?: s
       if (k === 'llama') {
         const prompt = opts.prompt || node.data?.prompt || 'UGC mirror selfie, iPhone flash'
         const out = await runLlama(prompt, node.data?.systemPrompt)
+        r.engine = out.engine; r.mocked = !!out.mocked
+        if (opts.strict && out.mocked) throw new Error('Prompt LLM not configured (set GROQ_API_KEY or PROMPT_LLM_* / OPENAI_*)')
         texts[id] = r.text = out.text
       } else if (k === 'flux') {
         const prompt = upstreamText || opts.prompt || node.data?.prompt || 'mirror selfie'
-        const { png } = await runFlux(prompt)
+        const { png, mocked } = await runFlux(prompt)
+        r.engine = mocked ? 'placeholder' : 'hf-flux.1-schnell'; r.mocked = mocked
+        if (opts.strict && mocked) throw new Error('Image model not configured (set HF_TOKEN)')
         buffers[id] = png
         r.imageUrl = await saveImage(png)
       } else if (k === 'remover') {
         if (!upstreamImg) throw new Error('Remover needs an input image')
-        const { png } = await runRemover(upstreamImg)
+        const { png, engine } = await runRemover(upstreamImg)
+        r.engine = engine; r.mocked = engine === 'passthrough'
+        if (opts.strict && engine === 'passthrough') throw new Error('Background removal failed')
         buffers[id] = png
         r.imageUrl = await saveImage(png)
       } else if (k === 'upscaler') {
         if (!upstreamImg) throw new Error('Upscaler needs an input image')
-        const { png } = await runUpscaler(upstreamImg, Number(node.data?.scale) || 4)
+        const { png, engine } = await runUpscaler(upstreamImg, Number(node.data?.scale) || 4)
+        r.engine = engine
+        if (opts.strict && process.env.REQUIRE_AI_UPSCALE === '1' && engine !== 'replicate-real-esrgan') throw new Error('AI upscaler not available')
         buffers[id] = png
         r.imageUrl = await saveImage(png)
       } else if (k === 'html') {
@@ -105,4 +113,15 @@ export async function runPipeline(nodes: any[], edges: any[], opts: { prompt?: s
     results[id] = r
   }
   return { status: failed ? 'failed' : 'success', results, imageUrl, html, durationMs: Date.now() - t0 }
+}
+
+// The fixed graph a buyer's credit pays for: prompt LLM -> FLUX -> background removal -> 4x upscale -> preview
+export const ENHANCE_GRAPH = {
+  nodes: [
+    { id: 'brain', type: 'llama-brain' }, { id: 'gen', type: 'flux-schnell' }, { id: 'cut', type: 'remover-birefnet' },
+    { id: 'up', type: 'upscaler-realesrgan', data: { scale: 4 } }, { id: 'out', type: 'html-preview' }
+  ],
+  edges: [
+    { source: 'brain', target: 'gen' }, { source: 'gen', target: 'cut' }, { source: 'cut', target: 'up' }, { source: 'up', target: 'out' }
+  ]
 }

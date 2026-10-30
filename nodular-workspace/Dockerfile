@@ -10,6 +10,8 @@ ARG VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 RUN npx vite build
 
+# SQLite (node:sqlite, Node 22.5+) and outputs live on the Fly volume mounted at /data
+RUN mkdir -p /data
 VOLUME /data
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

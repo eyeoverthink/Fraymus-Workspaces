@@ -1,26 +1,34 @@
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_SYSTEM = 'You are a FLUX prompt engineer. Convert user ideas into detailed, photorealistic FLUX.1 schnell prompts. Be specific about lighting, camera, texture. Output only the prompt.'
 
-export async function runLlama(prompt: string, system = DEFAULT_SYSTEM): Promise<{ text: string; mocked?: boolean }> {
-  const key = process.env.GROQ_API_KEY
-  if (!key) {
-    return { text: `Photorealistic ${prompt.slice(0, 200)}, UGC mirror selfie, iPhone flash, natural skin texture, 8k, ultra detailed`, mocked: true }
+// Prompt step. Engines, in order: Groq (GROQ_API_KEY), any OpenAI-compatible endpoint such as the
+// Hostinger router (PROMPT_LLM_BASE_URL/PROMPT_LLM_API_KEY, falling back to OPENAI_BASE_URL/OPENAI_API_KEY),
+// otherwise a fixed template (mocked=true). PROMPT_LLM=groq|openai|template forces one.
+export async function runLlama(prompt: string, system = DEFAULT_SYSTEM): Promise<{ text: string; mocked?: boolean; engine: string }> {
+  const groqKey = process.env.GROQ_API_KEY
+  const oaBase = process.env.PROMPT_LLM_BASE_URL || process.env.OPENAI_BASE_URL
+  const oaKey = process.env.PROMPT_LLM_API_KEY || process.env.OPENAI_API_KEY
+  const pick = process.env.PROMPT_LLM || (groqKey ? 'groq' : oaBase && oaKey ? 'openai' : 'template')
+  if (pick === 'template' || (pick === 'groq' && !groqKey) || (pick === 'openai' && !(oaBase && oaKey))) {
+    return { text: `Photorealistic ${prompt.slice(0, 200)}, UGC mirror selfie, iPhone flash, natural skin texture, 8k, ultra detailed`, mocked: true, engine: 'template' }
   }
-  const r = await fetch(GROQ_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-      max_tokens: 400,
-      temperature: 0.8
-    })
+  const url = pick === 'groq' ? GROQ_URL : `${oaBase!.replace(/\/$/, '')}/chat/completions`
+  const model = pick === 'groq' ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile') : (process.env.PROMPT_LLM_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini')
+  const headers: Record<string, string> = { Authorization: `Bearer ${pick === 'groq' ? groqKey : oaKey}`, 'Content-Type': 'application/json' }
+  if (pick === 'openai' && process.env.OPENAI_USER_AGENT) headers['User-Agent'] = process.env.OPENAI_USER_AGENT
+  const r = await fetch(url, {
+    method: 'POST', headers, signal: AbortSignal.timeout(60000),
+    body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 400, temperature: 0.8 })
   })
-  const data: any = await r.json()
-  if (!r.ok) throw new Error(`Groq failed ${r.status}: ${JSON.stringify(data).slice(0, 300)}`)
-  return { text: data.choices?.[0]?.message?.content || prompt }
+  const data: any = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(`${pick} prompt LLM failed ${r.status}: ${JSON.stringify(data).slice(0, 300)}`)
+  const text = data.choices?.[0]?.message?.content
+  if (!text) throw new Error(`${pick} prompt LLM returned no text`)
+  return { text, engine: `${pick}:${model}` }
 }
 
 function escapeXml(s: string) {
@@ -33,7 +41,10 @@ export async function runFlux(prompt: string): Promise<{ png: Buffer; mocked: bo
     const svg = `<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#e5e7eb"/><circle cx="512" cy="430" r="170" fill="#6366f1"/><rect x="332" y="620" width="360" height="260" rx="40" fill="#6366f1"/><text x="50%" y="960" text-anchor="middle" fill="#111" font-family="monospace" font-size="24">FLUX placeholder - set HF_TOKEN: ${escapeXml(prompt.slice(0, 40))}</text></svg>`
     return { png: await sharp(Buffer.from(svg)).png().toBuffer(), mocked: true }
   }
-  const r = await fetch('https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell', {
+  // api-inference.huggingface.co was replaced by the router; override with HF_FLUX_URL if your provider differs. [UNVERIFIED without a real token]
+  const url = process.env.HF_FLUX_URL || 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell'
+  const r = await fetch(url, {
+    signal: AbortSignal.timeout(120000),
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 4, guidance_scale: 0 } })
@@ -43,12 +54,27 @@ export async function runFlux(prompt: string): Promise<{ png: Buffer; mocked: bo
   return { png: await sharp(raw).png().toBuffer(), mocked: false }
 }
 
+function removeInWorker(input: Buffer, timeoutMs = 180000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, [fileURLToPath(new URL('./remover-worker.mjs', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const out: Buffer[] = []; let err = ''
+    const t = setTimeout(() => { p.kill('SIGKILL'); reject(new Error('background removal timed out')) }, timeoutMs)
+    p.stdout.on('data', (d) => out.push(d))
+    p.stderr.on('data', (d) => { err += d })
+    p.on('error', (e) => { clearTimeout(t); reject(e) })
+    p.on('close', (code, sig) => {
+      clearTimeout(t)
+      const png = Buffer.concat(out)
+      if (code === 0 && png.length) resolve(png)
+      else reject(new Error(`remover worker exited ${code ?? sig}: ${err.trim().split('\n').pop()?.slice(0, 200) || ''}`))
+    })
+    p.stdin.end(input)
+  })
+}
+
 export async function runRemover(input: Buffer): Promise<{ png: Buffer; engine: string }> {
   try {
-    const { removeBackground } = await import('@imgly/background-removal-node')
-    const src = await sharp(input).png().toBuffer()
-    const blob = await removeBackground(new Blob([new Uint8Array(src)], { type: 'image/png' }))
-    return { png: Buffer.from(await blob.arrayBuffer()), engine: 'imgly-birefnet-local' }
+    return { png: await removeInWorker(input), engine: 'imgly-isnet-local' }
   } catch (err) {
     console.warn('Local background removal failed, passing image through', err)
     return { png: await sharp(input).ensureAlpha().png().toBuffer(), engine: 'passthrough' }

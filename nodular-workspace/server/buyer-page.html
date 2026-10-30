@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FRAYMUS Enhance</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0b0b10;color:#eee;max-width:640px;margin:40px auto;padding:0 16px}
+input,textarea,button{font:inherit;padding:10px;border-radius:8px;border:1px solid #333;background:#16161f;color:#eee;width:100%;box-sizing:border-box;margin:6px 0}
+button{background:#6d5dfc;border:0;cursor:pointer}button:disabled{opacity:.5}
+.card{background:#12121a;border:1px solid #222;border-radius:12px;padding:16px;margin:16px 0}
+.muted{color:#999;font-size:13px}.err{color:#ff7b7b}img{max-width:100%;border-radius:8px;background:repeating-conic-gradient(#222 0 25%,#333 0 50%) 0 0/20px 20px}
+.hidden{display:none}
+</style></head><body>
+<h1>FRAYMUS Enhance</h1>
+<p class="muted">Use the email from your Shopify order. Each run uses 1 credit; failed runs are refunded automatically.</p>
+<div id="login" class="card">
+  <input id="email" type="email" placeholder="purchase email" autocomplete="email">
+  <button id="send">Email me a code</button>
+  <div id="codeBox" class="hidden"><input id="code" inputmode="numeric" maxlength="6" placeholder="6-digit code"><button id="verify">Sign in</button></div>
+  <div id="lmsg" class="muted"></div>
+</div>
+<div id="app" class="card hidden">
+  <div><b id="who"></b> · <span id="credits"></span> credits <a href="#" id="out" class="muted">sign out</a></div>
+  <textarea id="prompt" rows="3" placeholder="Describe the product shot or subject"></textarea>
+  <button id="go">Enhance (1 credit)</button>
+  <div id="rmsg" class="muted"></div>
+  <div id="result"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);let tok=localStorage.getItem('fx_tok');
+const api=(p,b)=>fetch(p,{method:b?'POST':'GET',headers:{'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{})},body:b?JSON.stringify(b):undefined}).then(async r=>({ok:r.ok,status:r.status,j:await r.json().catch(()=>({}))}));
+async function me(){if(!tok)return;const r=await api('/buyer/me');if(!r.ok){tok=null;localStorage.removeItem('fx_tok');return}
+$('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent=r.j.email;$('credits').textContent=r.j.credits}
+$('send').onclick=async()=>{const r=await api('/buyer/login/start',{email:$('email').value});$('lmsg').textContent=r.j.message||r.j.error||'';if(r.ok)$('codeBox').classList.remove('hidden')}
+$('verify').onclick=async()=>{const r=await api('/buyer/login/verify',{email:$('email').value,code:$('code').value});if(!r.ok){$('lmsg').textContent=r.j.error;return}tok=r.j.token;localStorage.setItem('fx_tok',tok);me()}
+$('out').onclick=e=>{e.preventDefault();localStorage.removeItem('fx_tok');location.reload()}
+$('go').onclick=async()=>{$('go').disabled=true;$('rmsg').textContent='Running… this can take a minute.';$('result').textContent='';
+const r=await api('/buyer/enhance',{prompt:$('prompt').value});$('go').disabled=false;
+if(r.j.credits!==undefined)$('credits').textContent=r.j.credits;
+if(r.ok){$('rmsg').textContent='Done.';const a=document.createElement('a');a.href=r.j.imageUrl;a.download='fraymus.png';const i=document.createElement('img');i.src=r.j.imageUrl;a.appendChild(i);$('result').appendChild(a)}
+else{$('rmsg').innerHTML='';const p=document.createElement('p');p.className='err';p.textContent=(r.j.error||'Run failed')+(r.j.refunded?' — credit refunded.':'');$('rmsg').appendChild(p);
+(r.j.steps||[]).filter(s=>s.error).forEach(s=>{const d=document.createElement('div');d.className='muted';d.textContent=s.id+': '+s.error;$('rmsg').appendChild(d)})}}
+me();
+</script></body></html>

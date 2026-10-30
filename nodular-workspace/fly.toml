@@ -4,22 +4,40 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
+# Option B: one machine, SQLite on the nodular_data volume (credits, grants, buyer sessions, outputs).
+# Never scale past 1 machine with SQLite. Secrets go in `fly secrets set` (see DEPLOY.md), not here.
 [env]
   PORT = "3001"
   DATA_DIR = "/data"
+  NODE_ENV = "production"
+  FREE_CREDITS = "0"
+  SHOPIFY_SHOP_DOMAIN = "eyeoverthink.myshopify.com"
+  SHOPIFY_PACK_PRODUCT_ID = "8843401527492"
+  SHOPIFY_CREDITS_PER_PACK = "25"
+  BUYER_PIPELINE_STRICT = "1"
+  LLM_PROVIDERS = "openai,groq"
+  OPENAI_USER_AGENT = "fraymus-agency/1.0"
 
 [mounts]
   source = "nodular_data"
   destination = "/data"
+  initial_size = "3gb"
+
+[deploy]
+  strategy = "immediate"   # single volume-backed machine: replace in place
 
 [http_service]
   internal_port = 3001
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = "off"   # stay warm: Shopify webhooks time out after ~5s
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [[http_service.checks]]
     path = "/health"
     interval = "30s"
     timeout = "10s"
+
+[[vm]]
+  memory = "2gb"   # background removal (onnxruntime) + 4096px images need headroom
+  cpus = 2

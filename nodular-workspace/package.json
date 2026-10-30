@@ -12,6 +12,7 @@
     "test": "node scripts/test-all.mjs",
     "test:workflow": "node scripts/test-workflow.mjs",
     "test:mcp-server": "node scripts/test-mcp-server.mjs",
+    "test:shopify": "node scripts/test-shopify.mjs",
     "clean": "node -e \"for (const d of ['dist','data-test']) require('fs').rmSync(d,{recursive:true,force:true})\""
   },
   "dependencies": {

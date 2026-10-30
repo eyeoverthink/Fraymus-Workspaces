@@ -91,3 +91,9 @@ returns boolean as $$
   with u as (update public.users set credits = credits - 1 where id = uid and credits > 0 returning 1)
   select exists(select 1 from u);
 $$ language sql;
+
+-- Refund one credit after a failed run
+create or replace function refund_credit(uid text)
+returns void as $$
+  update public.users set credits = credits + 1 where id = uid;
+$$ language sql;
