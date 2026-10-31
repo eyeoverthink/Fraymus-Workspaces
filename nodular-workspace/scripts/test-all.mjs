@@ -20,7 +20,8 @@ const env = {
   MCP_ADMIN_TOKEN: 'nodular-test-owner-admin-token-0001',
   MCP_ADMIN_USER: 'user_owner_test',
   OWNER_USER_IDS: 'user_owner_test',
-  OWNER_USER_ID: ''
+  OWNER_USER_ID: '',
+  OWNER_EMAILS: ''
 }
 const server = spawn(win ? 'npx.cmd' : 'npx', ['tsx', 'server/index.ts'], { env, stdio: 'ignore', shell: win })
 const stop = () => { if (win) spawn('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }); else server.kill() }

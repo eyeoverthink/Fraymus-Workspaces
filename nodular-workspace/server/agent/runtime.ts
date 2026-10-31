@@ -6,7 +6,7 @@ import { allTools, getTool, matchesTool, resultText, searchMemories, toolSpec, t
 import type { Store } from '../store'
 
 import { loadManifests, writeOverride, removeOverride, validId, type AgentDef } from './manifest'
-import { autoApproveOwnerTools, type ApprovalTrust } from './owner'
+import { autoApproveOwnerTools, matchesVerifiedOwnerEmail, type ApprovalTrust } from './owner'
 export type { AgentDef }
 export type { ApprovalTrust }
 
@@ -89,6 +89,14 @@ function history(threadId: string): Msg[] {
   return msgs
 }
 
+// Id match and the MCP admin token are synchronous. A verified OWNER_EMAILS
+// match is resolved here (session claim or cached Clerk API lookup).
+async function ownerAuto(userId: string, trust: ApprovalTrust): Promise<boolean> {
+  if (autoApproveOwnerTools(userId, trust)) return true
+  if (trust.unattended || !userId) return false
+  return matchesVerifiedOwnerEmail(userId, trust.sessionClaims)
+}
+
 const setRun = (runId: string, f: Record<string, any>) => {
   const keys = Object.keys(f)
   db.prepare(`update runs set ${keys.map((k) => `${k}=?`).join(',')}, updated_at=? where id=?`).run(...keys.map((k) => f[k]), now(), runId)
@@ -153,7 +161,7 @@ async function drive(runId: string, depth = 0): Promise<void> {
   }
 }
 
-export function startRun(userId: string, agentId: string, text: string, threadId?: string, trust: ApprovalTrust = {}) {
+export async function startRun(userId: string, agentId: string, text: string, threadId?: string, trust: ApprovalTrust = {}) {
   const agent = getAgent(userId, agentId)
   if (!agent) throw new Error('unknown agent')
   text = String(text || '').trim().slice(0, MAX_INPUT)
@@ -169,7 +177,7 @@ export function startRun(userId: string, agentId: string, text: string, threadId
     db.prepare('insert into threads(id,user_id,agent_id,title,created_at,updated_at) values(?,?,?,?,?,?)').run(threadId, userId, agentId, text.slice(0, 60), now(), now())
   }
   const runId = randomUUID()
-  const auto = autoApproveOwnerTools(userId, trust) ? 1 : 0
+  const auto = (await ownerAuto(userId, trust)) ? 1 : 0
   db.prepare("insert into runs(id,thread_id,user_id,status,created_at,updated_at,auto_approve) values(?,?,?,'running',?,?,?)").run(runId, threadId, userId, now(), now(), auto)
   addMsg(threadId, runId, { role: 'user', content: text })
   void drive(runId)
@@ -245,7 +253,7 @@ export const deleteMemory = (userId: string, id: number) => Number(db.prepare('d
 
 // Starts a run and waits until it finishes or needs approval (used by the MCP server and other headless callers).
 export async function runAgentAndWait(userId: string, agentId: string, message: string, threadId?: string, timeoutMs = 120_000, trust: ApprovalTrust = {}) {
-  const { runId, threadId: tid } = startRun(userId, agentId, message, threadId, trust)
+  const { runId, threadId: tid } = await startRun(userId, agentId, message, threadId, trust)
   const t0 = Date.now()
   for (;;) {
     const run = db.prepare('select status,error,provider,model from runs where id=?').get(runId) as any
@@ -262,7 +270,7 @@ export async function runAgentAndWait(userId: string, agentId: string, message: 
 export async function callToolDirect(userId: string, name: string, args: any, trust: ApprovalTrust = {}) {
   const tool = getTool(name)
   if (!tool) throw new Error(`unknown tool: ${name}`)
-  const auto = autoApproveOwnerTools(userId, trust)
+  const auto = await ownerAuto(userId, trust)
   const ctx: ToolCtx = { userId, agentId: 'mcp', threadId: '', depth: 0, store, delegate: (id, task) => delegateRun(userId, id, task, 1, auto) }
   return resultText(await tool.run(args || {}, ctx))
 }

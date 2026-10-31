@@ -32,7 +32,7 @@ function buildServer(p: Principal) {
     ({ id }) => ({ removed: resetAgentManifest(id) }))
   def('list_tools', 'read', 'List every tool agents can use, with risk level and JSON schema.', {},
     () => allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description, parameters: t.parameters })))
-  def('run_agent', 'run', 'Send a message to an agent and wait for its reply. Runs appear in the app UI as threads. Approval-risk tools run immediately for the app owner and for the MCP admin token, including agents they delegate to. Everyone else gets status awaiting_approval: approve in the app or call decide_approval (admin).',
+  def('run_agent', 'run', 'Send a message to an agent and wait for its reply. Runs appear in the app UI as threads. Approval-risk tools run immediately for the app owner (Clerk user id, verified OWNER_EMAILS match, or the MCP admin token), including agents they delegate to. Everyone else gets status awaiting_approval: approve in the app or call decide_approval (admin).',
     { agentId: z.string(), message: z.string(), threadId: z.string().optional(), waitSeconds: z.number().min(1).max(600).optional() },
     (a) => runAgentAndWait(uid, a.agentId, a.message, a.threadId, (a.waitSeconds ?? 120) * 1000, { asOwner: p.via === 'env-admin-token' }))
   def('list_threads', 'read', 'List recent conversations.', {}, () => listThreads(uid))

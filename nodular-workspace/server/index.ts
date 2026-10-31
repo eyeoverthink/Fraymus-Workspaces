@@ -27,8 +27,12 @@ const authRequired = !!process.env.CLERK_SECRET_KEY
 const LOCAL_USER = 'local'
 
 async function currentUser(req: any): Promise<string | null> {
-  if (!authRequired) return LOCAL_USER
+  if (!authRequired) {
+    req.clerkClaims = null
+    return LOCAL_USER
+  }
   const a = await authenticateClerk(req)
+  req.clerkClaims = a.authenticated ? a.payload : null
   return a.authenticated ? (a.userId as string) : null
 }
 
