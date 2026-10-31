@@ -95,6 +95,25 @@ Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, HTTP 
 
 The `video_director` agent writes and renders HyperFrames compositions. Tests: `npx tsx scripts/test-mcp.ts`, `npx tsx scripts/test-media.ts`.
 
+## Code-drawn explainer workflow
+
+`workflows/code-explainer-60s/workflow.json` is a 60-second code-drawn explainer. The runner is `explainer_orchestrator`. It asks `explainer_next_step` for one step at a time. The only creative human checkpoint is picking the hook. Research, the scene brief, and HTML are delegated. Only `explainer_planner` can read `skill.md`.
+
+| Step | What actually runs |
+|---|---|
+| Research | `explainer_researcher` + `web_search` |
+| Hook | The orchestrator stops and asks. Not an automation. |
+| Voiceover | VoiceStudio tools if `VOICESTUDIO_MCP_URL` is set, and only when the result has per-word times. `speak` is audio only. `elevenlabs_word_timestamps` is a guessed HTTP template, off until its env vars are set. |
+| Plan | `explainer_planner` reads the skill and writes one scene per sentence. |
+| Assets | `asset_lookup` searches a placeholder catalog. No model files are shipped. `asset_library_fetch` is a stub. |
+| Build | `scene_builder_express` (one pass), `scene_builder_standard` (one scene at a time), or `scene_builder_studio` (procedural 3D in the page). |
+| Preview and render | Existing `hyperframes_render` (draft, then delivery). It still asks for approval. Remotion is not in this repo. |
+| QA | `explainer_qa` compares numbers you pass in and returns pass/fail plus fixes. It does not open the video. There is no frame probe. |
+| Learn | `explainer_learn` appends the approved video to a local reference pool and can tighten checks. It cannot loosen shipped thresholds. |
+| Realism | Optional `realism_pass` HTTP stub. Off until `REALISM_PREDICT_URL` and `REPLICATE_API_TOKEN` are set. |
+
+HyperFrames still needs Chrome and FFmpeg on the host, same as `video_director`. `scripts/test-explainer.ts` checks the definition, the manifests, and the tools. It does not render a video.
+
 ## Self-hosted agent hub: MCP server, MCP import, OAuth in
 
 Everything Base44 did for agents now runs here, free and self-hosted. Other agents (OpenClaw, Claude, anything that speaks MCP) can join, see and change it.

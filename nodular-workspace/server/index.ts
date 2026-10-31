@@ -17,6 +17,7 @@ import { startScheduler } from './agent/automations'
 import { registerOAuthRoutes, registerAccessRoutes } from './agent/auth'
 import { registerMcpServer } from './agent/mcp-server'
 import { registerMediaTools } from './agent/media'
+import { registerExplainerTools } from './agent/explainer'
 
 const PORT = Number(process.env.PORT || 3001)
 const fastify = Fastify({ logger: true })
@@ -247,6 +248,7 @@ fastify.post('/api/billing/checkout', async (req, reply) => {
 })
 
 registerMediaTools()
+registerExplainerTools()
 initAgents(store)
 startScheduler()
 initMcp().then((s) => s.forEach((x) => console.log(`[mcp] ${x.name}: ${x.status}${x.detail ? ' (' + x.detail + ')' : ''} tools=${x.tools}`)))

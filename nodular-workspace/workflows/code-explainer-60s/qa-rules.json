@@ -1,0 +1,45 @@
+{
+  "note": "Shipped defaults. explainer_qa returns fixes only, never these thresholds. Frame probing is not implemented; the caller supplies measurements. Learned corrections can tighten a bound and cannot loosen it.",
+  "rules": [
+    {
+      "metric": "cameraSpeedPxPerSec",
+      "label": "camera speed",
+      "max": 720,
+      "fix": "Slow the camera so a phone viewer can follow it."
+    },
+    {
+      "metric": "stillFrameMs",
+      "label": "how long a frame stays still",
+      "max": 1400,
+      "fix": "A frame holds still too long. Move the element the current word names."
+    },
+    {
+      "metric": "colorStrength",
+      "label": "color strength",
+      "min": 0.35,
+      "max": 1,
+      "fix": "Color is outside the approved range. Move it toward the saved look, away from flat gray."
+    },
+    {
+      "metric": "loudnessLufs",
+      "label": "loudness",
+      "min": -20,
+      "max": -14,
+      "fix": "Voice loudness is outside the delivery range."
+    },
+    {
+      "metric": "flicker",
+      "label": "flicker",
+      "min": 0,
+      "max": 0.08,
+      "fix": "Flicker is too strong. Hold exposure and colors steady across frames."
+    },
+    {
+      "metric": "mobileReadability",
+      "label": "mobile readability",
+      "min": 0.7,
+      "max": 1,
+      "fix": "Type or the subject is not readable on a phone."
+    }
+  ]
+}
