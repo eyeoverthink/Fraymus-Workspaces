@@ -6,7 +6,9 @@ import { allTools, getTool, matchesTool, resultText, searchMemories, toolSpec, t
 import type { Store } from '../store'
 
 import { loadManifests, writeOverride, removeOverride, validId, type AgentDef } from './manifest'
+import { autoApproveOwnerTools, type ApprovalTrust } from './owner'
 export type { AgentDef }
+export type { ApprovalTrust }
 
 const MAX_STEPS = 8
 const MAX_HISTORY = 40
@@ -111,7 +113,11 @@ async function drive(runId: string, depth = 0): Promise<void> {
     const agent = getAgent(thread.user_id, thread.agent_id)
     if (!agent) throw new Error('agent no longer exists')
     const tools = toolsFor(agent)
-    const ctx: ToolCtx = { userId: thread.user_id, agentId: agent.id, threadId: thread.id, depth, store, delegate: (id, task) => delegateRun(thread.user_id, id, task, depth + 1) }
+    // auto_approve is fixed when the run starts and copied into delegated children.
+    // Recomputing from the user id here would let an unattended owner automation
+    // escape the gate by delegating.
+    const trusted = Number(run.auto_approve) === 1
+    const ctx: ToolCtx = { userId: thread.user_id, agentId: agent.id, threadId: thread.id, depth, store, delegate: (id, task) => delegateRun(thread.user_id, id, task, depth + 1, trusted) }
 
     for (let step = run.steps; step < MAX_STEPS; step++) {
       const hist = history(thread.id)
@@ -126,9 +132,10 @@ async function drive(runId: string, depth = 0): Promise<void> {
         const tool = tools.find((t) => t.name === call.name)
         if (!tool) {
           addMsg(thread.id, runId, { role: 'tool', name: call.name, tool_call_id: call.id, content: JSON.stringify({ error: `unknown or unavailable tool: ${call.name}` }) })
-        } else if (tool.risk === 'approval' && depth > 0) {
+        } else if (tool.risk === 'approval' && !trusted && depth > 0) {
+          // No approval card can be shown inside a delegated run, so non-owners are refused.
           addMsg(thread.id, runId, { role: 'tool', name: call.name, tool_call_id: call.id, content: JSON.stringify({ error: 'this tool needs user approval and cannot be used in a delegated run' }) })
-        } else if (tool.risk === 'approval') {
+        } else if (tool.risk === 'approval' && !trusted) {
           db.prepare('insert into approvals(id,run_id,thread_id,user_id,call_id,tool,args,status,created_at) values(?,?,?,?,?,?,?,?,?)')
             .run(randomUUID(), runId, thread.id, thread.user_id, call.id, call.name, JSON.stringify(call.arguments || {}), 'pending', now())
           pending = true
@@ -146,7 +153,7 @@ async function drive(runId: string, depth = 0): Promise<void> {
   }
 }
 
-export function startRun(userId: string, agentId: string, text: string, threadId?: string) {
+export function startRun(userId: string, agentId: string, text: string, threadId?: string, trust: ApprovalTrust = {}) {
   const agent = getAgent(userId, agentId)
   if (!agent) throw new Error('unknown agent')
   text = String(text || '').trim().slice(0, MAX_INPUT)
@@ -162,18 +169,19 @@ export function startRun(userId: string, agentId: string, text: string, threadId
     db.prepare('insert into threads(id,user_id,agent_id,title,created_at,updated_at) values(?,?,?,?,?,?)').run(threadId, userId, agentId, text.slice(0, 60), now(), now())
   }
   const runId = randomUUID()
-  db.prepare("insert into runs(id,thread_id,user_id,status,created_at,updated_at) values(?,?,?,'running',?,?)").run(runId, threadId, userId, now(), now())
+  const auto = autoApproveOwnerTools(userId, trust) ? 1 : 0
+  db.prepare("insert into runs(id,thread_id,user_id,status,created_at,updated_at,auto_approve) values(?,?,?,'running',?,?,?)").run(runId, threadId, userId, now(), now(), auto)
   addMsg(threadId, runId, { role: 'user', content: text })
   void drive(runId)
   return { runId, threadId }
 }
 
-async function delegateRun(userId: string, agentId: string, task: string, depth: number): Promise<string> {
+async function delegateRun(userId: string, agentId: string, task: string, depth: number, autoApprove = false): Promise<string> {
   if (!getAgent(userId, agentId)) throw new Error(`unknown agent: ${agentId}`)
   const threadId = randomUUID()
   db.prepare('insert into threads(id,user_id,agent_id,title,created_at,updated_at) values(?,?,?,?,?,?)').run(threadId, userId, agentId, `[delegated] ${task.slice(0, 50)}`, now(), now())
   const runId = randomUUID()
-  db.prepare("insert into runs(id,thread_id,user_id,status,created_at,updated_at) values(?,?,?,'running',?,?)").run(runId, threadId, userId, now(), now())
+  db.prepare("insert into runs(id,thread_id,user_id,status,created_at,updated_at,auto_approve) values(?,?,?,'running',?,?,?)").run(runId, threadId, userId, now(), now(), autoApprove ? 1 : 0)
   addMsg(threadId, runId, { role: 'user', content: String(task).slice(0, MAX_INPUT) })
   await drive(runId, depth)
   const run = db.prepare('select status,error from runs where id=?').get(runId) as any
@@ -194,7 +202,8 @@ export async function decideApproval(userId: string, approvalId: string, approve
   if (approve) {
     const thread = db.prepare('select * from threads where id=?').get(ap.thread_id) as any
     const tool = getTool(ap.tool)
-    const ctx: ToolCtx = { userId, agentId: thread.agent_id, threadId: thread.id, depth: 0, store, delegate: (id, task) => delegateRun(userId, id, task, 1) }
+    const trusted = Number((db.prepare('select auto_approve from runs where id=?').get(ap.run_id) as any)?.auto_approve) === 1
+    const ctx: ToolCtx = { userId, agentId: thread.agent_id, threadId: thread.id, depth: 0, store, delegate: (id, task) => delegateRun(userId, id, task, 1, trusted) }
     content = tool ? await execTool(tool, JSON.parse(ap.args), ctx) : JSON.stringify({ error: 'tool no longer exists' })
   } else {
     content = JSON.stringify({ error: 'The user rejected this action.' })
@@ -235,8 +244,8 @@ export const listMemories = (userId: string) => db.prepare('select id,agent_id,t
 export const deleteMemory = (userId: string, id: number) => Number(db.prepare('delete from memories where id=? and user_id=?').run(id, userId).changes) > 0
 
 // Starts a run and waits until it finishes or needs approval (used by the MCP server and other headless callers).
-export async function runAgentAndWait(userId: string, agentId: string, message: string, threadId?: string, timeoutMs = 120_000) {
-  const { runId, threadId: tid } = startRun(userId, agentId, message, threadId)
+export async function runAgentAndWait(userId: string, agentId: string, message: string, threadId?: string, timeoutMs = 120_000, trust: ApprovalTrust = {}) {
+  const { runId, threadId: tid } = startRun(userId, agentId, message, threadId, trust)
   const t0 = Date.now()
   for (;;) {
     const run = db.prepare('select status,error,provider,model from runs where id=?').get(runId) as any
@@ -250,9 +259,10 @@ export async function runAgentAndWait(userId: string, agentId: string, message: 
 }
 
 // Direct tool execution for an authenticated admin principal (no per-call approval: the token itself is the authorization).
-export async function callToolDirect(userId: string, name: string, args: any) {
+export async function callToolDirect(userId: string, name: string, args: any, trust: ApprovalTrust = {}) {
   const tool = getTool(name)
   if (!tool) throw new Error(`unknown tool: ${name}`)
-  const ctx: ToolCtx = { userId, agentId: 'mcp', threadId: '', depth: 0, store, delegate: (id, task) => delegateRun(userId, id, task, 1) }
+  const auto = autoApproveOwnerTools(userId, trust)
+  const ctx: ToolCtx = { userId, agentId: 'mcp', threadId: '', depth: 0, store, delegate: (id, task) => delegateRun(userId, id, task, 1, auto) }
   return resultText(await tool.run(args || {}, ctx))
 }

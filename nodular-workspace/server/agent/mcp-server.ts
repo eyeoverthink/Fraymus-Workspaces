@@ -32,9 +32,9 @@ function buildServer(p: Principal) {
     ({ id }) => ({ removed: resetAgentManifest(id) }))
   def('list_tools', 'read', 'List every tool agents can use, with risk level and JSON schema.', {},
     () => allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description, parameters: t.parameters })))
-  def('run_agent', 'run', 'Send a message to an agent and wait for its reply. Runs appear in the app UI as threads. If status is awaiting_approval, approve in the app or call decide_approval (admin).',
+  def('run_agent', 'run', 'Send a message to an agent and wait for its reply. Runs appear in the app UI as threads. Approval-risk tools run immediately for the app owner and for the MCP admin token, including agents they delegate to. Everyone else gets status awaiting_approval: approve in the app or call decide_approval (admin).',
     { agentId: z.string(), message: z.string(), threadId: z.string().optional(), waitSeconds: z.number().min(1).max(600).optional() },
-    (a) => runAgentAndWait(uid, a.agentId, a.message, a.threadId, (a.waitSeconds ?? 120) * 1000))
+    (a) => runAgentAndWait(uid, a.agentId, a.message, a.threadId, (a.waitSeconds ?? 120) * 1000, { asOwner: p.via === 'env-admin-token' }))
   def('list_threads', 'read', 'List recent conversations.', {}, () => listThreads(uid))
   def('get_thread', 'read', 'Get a conversation: messages, run status, pending approvals.', { id: z.string(), lastMessages: z.number().min(1).max(200).optional() },
     ({ id, lastMessages }) => {
@@ -45,7 +45,7 @@ function buildServer(p: Principal) {
   def('decide_approval', 'admin', 'Approve or reject a pending tool call that an agent requested.', { approvalId: z.string(), approve: z.boolean() },
     ({ approvalId, approve }) => decideApproval(uid, approvalId, approve))
   def('call_tool', 'admin', 'Execute any registered tool directly (built-ins, HTTP tools, imported MCP tools) without an agent.', { name: z.string(), arguments: z.record(z.string(), z.any()).optional() },
-    async ({ name, arguments: args }) => callToolDirect(uid, name, args))
+    async ({ name, arguments: args }) => callToolDirect(uid, name, args, { asOwner: p.via === 'env-admin-token' }))
   def('list_mcp_servers', 'read', 'List MCP servers this workspace is connected to and their status.', {}, () => mcpServers())
   def('import_mcp_server', 'admin', 'Connect another MCP server (http url, or command if ALLOW_STDIO_IMPORT=1). Accepts {name,url|command,args,env,headers,safeTools} or a {mcpServers:{...}} document. Its tools become <name>__<tool>.',
     { name: z.string().optional(), url: z.string().optional(), command: z.string().optional(), args: z.array(z.string()).optional(), env: z.record(z.string(), z.string()).optional(), headers: z.record(z.string(), z.string()).optional(), safeTools: z.array(z.string()).optional(), mcpServers: z.record(z.string(), z.any()).optional() },
