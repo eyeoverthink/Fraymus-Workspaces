@@ -54,7 +54,7 @@ export function registerAgentRoutes(app: FastifyInstance) {
   app.delete('/api/automations/:id', async (req) => ({ ok: deleteAutomation((req as any).userId, (req.params as any).id) }))
   app.post('/api/agent/runs', async (req, reply) => {
     const { agentId, message, threadId } = (req.body as any) || {}
-    try { return startRun((req as any).userId, String(agentId || 'concierge'), message, threadId) } catch (e) { return fail(reply, e) }
+    try { return await startRun((req as any).userId, String(agentId || 'concierge'), message, threadId, { sessionClaims: (req as any).clerkClaims || null }) } catch (e) { return fail(reply, e) }
   })
 
   app.get('/api/agent/threads', async (req) => listThreads((req as any).userId))
