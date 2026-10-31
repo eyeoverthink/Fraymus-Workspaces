@@ -19,12 +19,17 @@ async function ready() {
   }
   throw new Error('server did not start')
 }
-const run = (file) => new Promise((res) => spawn(process.execPath, [file], { env, stdio: 'inherit' }).on('close', res))
+const run = (file) => new Promise((res) => {
+  const ts = file.endsWith('.ts')
+  const cmd = ts ? (win ? 'npx.cmd' : 'npx') : process.execPath
+  const args = ts ? ['tsx', file] : [file]
+  spawn(cmd, args, { env, stdio: 'inherit', shell: win }).on('close', res)
+})
 
 let failed = 0
 try {
   await ready()
-  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs']) {
+  for (const f of ['scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-explainer.ts']) {
     console.log(`\n== ${f}`)
     if (await run(f)) failed++
   }
