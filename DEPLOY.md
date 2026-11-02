@@ -42,7 +42,7 @@ fly deploy
 ## Verify Deploy
 
 curl http://localhost:3001/health
-# Should return { status: 'ok', freeStack: true }
+# {"ok":true,"store":"sqlite"}
 
 curl -X POST http://localhost:3001/api/workflows/test/run -H "Content-Type: application/json" -d '{"prompt":"mirror selfie"}'
 

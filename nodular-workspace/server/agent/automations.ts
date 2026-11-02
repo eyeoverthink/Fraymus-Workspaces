@@ -94,11 +94,12 @@ export async function runAutomation(userId: string, id: string, trigger: 'schedu
   try {
     const payload = JSON.parse(a.payload)
     if (a.kind === 'agent') {
-      // Unattended: approval-risk tools stay pending for a human (status awaiting_approval), they are never auto-approved.
-      const r = await runAgentAndWait(userId, a.agent_id, payload.prompt, undefined, 10 * 60_000)
+      // Unattended: approval-risk tools stay pending for a human (status awaiting_approval).
+      // This includes the app owner. Interactive and delegated owner runs are the ones that auto-approve.
+      const r = await runAgentAndWait(userId, a.agent_id, payload.prompt, undefined, 10 * 60_000, { unattended: true })
       finish(r.pendingApprovals.length ? 'awaiting_approval' : r.status === 'done' ? 'done' : r.status, { output: r.reply, error: r.error, threadId: r.threadId })
     } else {
-      finish('done', { output: await callToolDirect(userId, a.tool, payload.args) })
+      finish('done', { output: await callToolDirect(userId, a.tool, payload.args, { unattended: true }) })
     }
   } catch (e: any) {
     finish('error', { error: e.message || String(e) })

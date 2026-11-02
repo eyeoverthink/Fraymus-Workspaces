@@ -9,7 +9,7 @@ db.exec(`
 create table if not exists threads(id text primary key, user_id text not null, agent_id text not null, title text, created_at integer, updated_at integer);
 create table if not exists messages(id integer primary key autoincrement, thread_id text not null, run_id text, role text not null, content text, tool_calls text, tool_call_id text, name text, created_at integer);
 create index if not exists idx_msg_thread on messages(thread_id, id);
-create table if not exists runs(id text primary key, thread_id text not null, user_id text, status text, error text, provider text, model text, steps integer default 0, created_at integer, updated_at integer);
+create table if not exists runs(id text primary key, thread_id text not null, user_id text, status text, error text, provider text, model text, steps integer default 0, created_at integer, updated_at integer, auto_approve integer not null default 0);
 create table if not exists approvals(id text primary key, run_id text, thread_id text, user_id text, call_id text, tool text, args text, status text, created_at integer, decided_at integer);
 create table if not exists memories(id integer primary key autoincrement, user_id text, agent_id text, text text, tags text, created_at integer);
 create index if not exists idx_mem_user on memories(user_id, id);
@@ -20,5 +20,8 @@ create index if not exists idx_arun on automation_runs(automation_id, started_at
 create table if not exists access_tokens(id text primary key, user_id text not null, name text, kind text, client_id text, hash text unique not null, scopes text not null, expires_at integer, created_at integer, last_used integer);
 create table if not exists oauth_clients(client_id text primary key, user_id text not null, name text, secret_hash text not null, scopes text not null, created_at integer);
 `)
+
+const runCols = db.prepare('pragma table_info(runs)').all() as { name: string }[]
+if (!runCols.some((c) => c.name === 'auto_approve')) db.exec('alter table runs add column auto_approve integer not null default 0')
 
 export const now = () => Date.now()
