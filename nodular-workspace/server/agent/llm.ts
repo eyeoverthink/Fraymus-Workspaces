@@ -134,6 +134,7 @@ function mockChat(messages: Msg[], tools: ToolSpec[]): LlmResult {
   if (has('http_get') && (m = text.match(/fetch (https?:\/\/\S+)/i))) return mk('http_get', { url: m[1] })
   if (has('generate_image') && (m = text.match(/(?:image|picture|draw|generate) (?:of )?(.+)/i))) return mk('generate_image', { prompt: m[1] })
   if (has('web_search') && (m = text.match(/search (?:for )?(.+)/i))) return mk('web_search', { query: m[1] })
+  if (has('read_explainer_skill') && /read the explainer skill/i.test(text)) return mk('read_explainer_skill', {})
   return {
     content: `[mock model - no LLM configured] You said: "${text.slice(0, 200)}". Start Ollama or set GROQ_API_KEY / OPENAI_BASE_URL to get real answers.`,
     tool_calls: [], provider: 'mock', model: 'mock'

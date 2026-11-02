@@ -1,0 +1,37 @@
+{
+  "note": "Placeholder catalog. No model files are shipped. A match is not a downloadable asset. Vaughn supplies any licensed library.",
+  "assets": [
+    {
+      "id": "example-globe",
+      "name": "Globe",
+      "tags": ["earth", "planet", "globe"],
+      "kind": "placeholder",
+      "status": "not_a_file",
+      "note": "STUB record. No geometry file is included."
+    },
+    {
+      "id": "example-chart",
+      "name": "Bar chart",
+      "tags": ["chart", "graph", "bars"],
+      "kind": "placeholder",
+      "status": "not_a_file",
+      "note": "STUB record. Draw the chart in code."
+    },
+    {
+      "id": "example-arrow",
+      "name": "Arrow",
+      "tags": ["arrow", "pointer"],
+      "kind": "placeholder",
+      "status": "not_a_file",
+      "note": "STUB record. Draw the arrow in code."
+    },
+    {
+      "id": "example-phone",
+      "name": "Phone",
+      "tags": ["phone", "mobile"],
+      "kind": "placeholder",
+      "status": "not_a_file",
+      "note": "STUB record. No device model is included."
+    }
+  ]
+}

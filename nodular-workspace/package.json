@@ -14,6 +14,7 @@
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
     "test": "node scripts/test-all.mjs",
     "test:workflow": "node scripts/test-workflow.mjs",
+    "test:explainer": "tsx scripts/test-explainer.ts",
     "test:mcp-server": "node scripts/test-mcp-server.mjs",
     "clean": "node -e \"for (const d of ['dist','data-test']) require('fs').rmSync(d,{recursive:true,force:true})\""
   },

@@ -1,0 +1,118 @@
+{
+  "id": "code-explainer-60s",
+  "name": "Code-drawn 60-second explainer",
+  "version": 1,
+  "runner": "explainer_orchestrator",
+  "entry": "research_script",
+  "durationSec": 60,
+  "aspect": "portrait",
+  "renderer": "hyperframes_render",
+  "humanGates": ["pick_hook"],
+  "skill": "skill.md",
+  "qaRules": "qa-rules.json",
+  "assetCatalog": "assets.json",
+  "provenance": "Original Fraymus mapping of a public code-drawn explainer pipeline (YouTube P9t0nmxGXF4). Not a transcript.",
+  "freeFirst": true,
+  "unattended": "Do not schedule this as an automation. Picking the hook needs a person, and unattended runs cannot approve hyperframes_render.",
+  "real": ["explainer_next_step", "explainer_qa", "asset_lookup", "explainer_learn", "read_explainer_skill", "hyperframes_render", "web_search"],
+  "realWhenConfigured": ["voicestudio"],
+  "presentButNotSufficient": ["speak"],
+  "stubs": ["elevenlabs_word_timestamps", "asset_library_fetch", "realism_pass", "frame_probe"],
+  "tiers": {
+    "express": { "builder": "scene_builder_express", "review": "once" },
+    "standard": { "builder": "scene_builder_standard", "review": "per_scene" },
+    "studio": { "builder": "scene_builder_studio", "review": "per_scene" }
+  },
+  "steps": [
+    {
+      "id": "topic",
+      "kind": "input",
+      "instruction": "Read the topic from the user's message. Do not research it in this step."
+    },
+    {
+      "id": "research_script",
+      "kind": "agent",
+      "agent": "explainer_researcher",
+      "instruction": "The user message is the topic. Delegate to explainer_researcher. Do not pick a hook."
+    },
+    {
+      "id": "pick_hook",
+      "kind": "human_gate",
+      "instruction": "Stop. Show hooks A, B, and C and ask the user to pick one. This is the only creative checkpoint. Do not continue in this turn."
+    },
+    {
+      "id": "voiceover",
+      "kind": "tool",
+      "candidates": ["voicestudio__generate_speech", "elevenlabs_word_timestamps"],
+      "notSufficient": ["speak"],
+      "instruction": "Narrate the approved script. Use a tool you were actually given, in this order: a voicestudio__ speech tool, then elevenlabs_word_timestamps. Continue only if the tool result includes a time for every word. speak returns an audio URL and is not sufficient. elevenlabs_word_timestamps is a guessed HTTP template and is absent until its env vars are set. If no timing tool is available, stop. Do not invent times."
+    },
+    {
+      "id": "plan",
+      "kind": "agent",
+      "agent": "explainer_planner",
+      "instruction": "Delegate to explainer_planner with the approved script and the word timings. Do not write the brief yourself and do not include any skill text."
+    },
+    {
+      "id": "assets",
+      "kind": "tool",
+      "tool": "asset_lookup",
+      "instruction": "Call asset_lookup for the ids and nouns in the brief. Matches are placeholder catalog rows, not files. Do not call asset_library_fetch unless it is in your tool list; that entry is a stub and stays unregistered until ASSET_LIBRARY_URL and ASSET_LIBRARY_TOKEN are set. Pass the lookup result to the builder unchanged."
+    },
+    {
+      "id": "build",
+      "kind": "agent",
+      "agentByTier": true,
+      "instruction": "Delegate to the named builder. When review is per_scene, send one scene and hold the rest. When review is once, send the whole brief. Include the asset lookup and any explainer_qa fix list unchanged. Ask for HyperFrames HTML only."
+    },
+    {
+      "id": "preview",
+      "kind": "tool",
+      "tool": "hyperframes_render",
+      "quality": "draft",
+      "instruction": "Call hyperframes_render with the builder HTML, resolution portrait, quality draft, fps 30. This is an early preview, not the delivery file. Tell the user the tool asks for approval. Do not invent a media URL. On the next turn call explainer_next_step with rendered false."
+    },
+    {
+      "id": "render",
+      "kind": "tool",
+      "tool": "hyperframes_render",
+      "quality": "delivery",
+      "instruction": "Call hyperframes_render with the HTML, resolution portrait, quality delivery, fps 30. The tool asks for approval. If it returns an error, hand that error to the builder once. After it returns mediaUrl, call explainer_next_step with rendered true. Do not invent a URL."
+    },
+    {
+      "id": "qa",
+      "kind": "tool",
+      "tool": "explainer_qa",
+      "instruction": "Call explainer_qa with measurements you were given for camera speed, stillness, color strength, loudness, flicker, and mobile readability. Do not invent numbers. There is no frame probe. The tool returns only pass or fail and a fix list. Then call explainer_next_step with that qa value, rendered true only after the delivery render, and scenesLeft equal to scenes not yet built (0 on express)."
+    },
+    {
+      "id": "learn",
+      "kind": "tool",
+      "tool": "explainer_learn",
+      "instruction": "Call explainer_learn with videoId, topic, tier, and the mediaUrl hyperframes_render returned. Add a correction only when the user stated a metric, a number, and a fix sentence. Shipped checks cannot be loosened."
+    },
+    {
+      "id": "realism",
+      "kind": "tool",
+      "tool": "realism_pass",
+      "optional": true,
+      "stub": true,
+      "instruction": "Optional and off the free path. Call realism_pass only if it is in your tool list. It is a guessed HTTP template and stays unregistered until REALISM_PREDICT_URL and REPLICATE_API_TOKEN are set. If it is absent, go to output and say the realism pass is not configured."
+    },
+    {
+      "id": "output",
+      "kind": "output",
+      "instruction": "Reply with the topic, the tier, the mediaUrl, and whether QA passed or was overridden. Omit any file you cannot point to from a tool result."
+    }
+  ],
+  "transitions": [
+    { "from": "pick_hook", "when": { "hookChosen": false }, "to": "pick_hook" },
+    { "from": "preview", "when": { "review": "per_scene" }, "to": "qa" },
+    { "from": "qa", "when": { "qa": "fail" }, "to": "build" },
+    { "from": "qa", "when": { "qa": "pass", "review": "per_scene", "scenesLeftGt": 0 }, "to": "build" },
+    { "from": "qa", "when": { "qa": "pass", "rendered": false }, "to": "render" },
+    { "from": "qa", "when": { "qa": "override" }, "to": "learn" },
+    { "from": "learn", "when": { "wantRealism": true }, "to": "realism" },
+    { "from": "learn", "when": { "wantRealism": false }, "to": "output" }
+  ]
+}

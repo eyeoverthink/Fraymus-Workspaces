@@ -36,5 +36,44 @@
       "properties": { "text": { "type": "string" } },
       "required": ["text"]
     }
+  },
+  {
+    "name": "elevenlabs_word_timestamps",
+    "description": "STUB template, not verified against a live account. Word-level TTS. Unregistered until ELEVENLABS_API_KEY, ELEVENLABS_API_URL, and ELEVENLABS_VOICE_ID are set. Adapt the path and body to your account. Free-first narration is VoiceStudio when VOICESTUDIO_MCP_URL is set; use its result only when it actually includes per-word times. speak does not return word times.",
+    "risk": "approval",
+    "method": "POST",
+    "url": "${ENV:ELEVENLABS_API_URL}/v1/text-to-speech/${ENV:ELEVENLABS_VOICE_ID}/with-timestamps",
+    "headers": { "xi-api-key": "${ENV:ELEVENLABS_API_KEY}" },
+    "parameters": {
+      "type": "object",
+      "properties": { "text": { "type": "string" }, "model_id": { "type": "string" } },
+      "required": ["text"]
+    }
+  },
+  {
+    "name": "asset_library_fetch",
+    "description": "STUB. Guessed HTTP template for a remote licensed-asset store. Unregistered until ASSET_LIBRARY_URL and ASSET_LIBRARY_TOKEN are set. The free path is asset_lookup, which only searches the shipped placeholder catalog.",
+    "risk": "approval",
+    "method": "POST",
+    "url": "${ENV:ASSET_LIBRARY_URL}/assets/fetch",
+    "headers": { "Authorization": "Bearer ${ENV:ASSET_LIBRARY_TOKEN}" },
+    "parameters": {
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "realism_pass",
+    "description": "STUB, optional, paid. Guessed prediction POST for a video realism model (for example a Replicate model you choose). Unregistered until REALISM_PREDICT_URL and REPLICATE_API_TOKEN are set. Not part of the free path. Do not treat a response as a finished cut until you confirm the vendor API.",
+    "risk": "approval",
+    "method": "POST",
+    "url": "${ENV:REALISM_PREDICT_URL}",
+    "headers": { "Authorization": "Bearer ${ENV:REPLICATE_API_TOKEN}" },
+    "parameters": {
+      "type": "object",
+      "properties": { "videoUrl": { "type": "string" }, "prompt": { "type": "string" } },
+      "required": ["videoUrl"]
+    }
   }
 ]
