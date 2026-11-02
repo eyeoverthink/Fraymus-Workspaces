@@ -13,6 +13,9 @@ export async function authenticateClerk(req: any) {
 
   try {
     const payload = await verifyToken(token, { secretKey: secret })
+    // Default session tokens include sub (the Clerk user id) and do not include email.
+    // Owner email matching reads a verified claim when a custom token has one, and
+    // otherwise loads verified addresses from the Clerk Backend API.
     return { userId: payload.sub, authenticated: true, payload }
   } catch (e: any) {
     console.warn('Clerk verify failed', e.message)
