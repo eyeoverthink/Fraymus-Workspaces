@@ -3,21 +3,70 @@
     "name": "voicestudio",
     "description": "VoiceStudio (AGPL-3.0) local speech/voice MCP. Install separately: https://voicestudio.sh",
     "url": "${ENV:VOICESTUDIO_MCP_URL}",
-    "requires": ["VOICESTUDIO_MCP_URL"],
-    "safeTools": ["list_voices", "list_personalities", "list_languages", "check_health", "describe_voice"]
+    "requires": [
+      "VOICESTUDIO_MCP_URL"
+    ],
+    "safeTools": [
+      "list_voices",
+      "list_personalities",
+      "list_languages",
+      "check_health",
+      "describe_voice"
+    ]
   },
   {
     "name": "photocraft",
     "description": "PhotoCraft headless MCP (Apache-2.0). Needs the photocraft-cli binary.",
     "command": "${ENV:PHOTOCRAFT_CLI}",
-    "args": ["mcp"],
-    "requires": ["PHOTOCRAFT_CLI"]
+    "args": [
+      "mcp"
+    ],
+    "requires": [
+      "PHOTOCRAFT_CLI"
+    ]
   },
   {
     "name": "rea",
     "description": "Reverse Engineer Anything (morluto/rea, MIT) - binary/app analysis MCP. Opt-in: set REA_MCP=1.",
     "command": "npx",
-    "args": ["-y", "rea-agents@latest", "--mcp"],
-    "requires": ["REA_MCP"]
+    "args": [
+      "-y",
+      "rea-agents@latest",
+      "mcp"
+    ],
+    "requires": [
+      "REA_MCP"
+    ]
+  },
+  {
+    "name": "reax",
+    "description": "REAX unified RE server (radare2 / Ghidra / IDA, MIT). Opt-in: set REAX_MCP=1 and REAX_PYTHON to the venv python.",
+    "command": "${ENV:REAX_PYTHON}",
+    "args": [
+      "-m",
+      "reax.server"
+    ],
+    "requires": [
+      "REAX_MCP",
+      "REAX_PYTHON"
+    ],
+    "safeTools": [
+      "backends",
+      "open_binary",
+      "close_binary",
+      "list_sessions",
+      "binary_info",
+      "list_functions",
+      "decompile",
+      "disassemble",
+      "xrefs",
+      "strings",
+      "imports",
+      "exports",
+      "search",
+      "triage",
+      "refine_decompile",
+      "logic_engine"
+    ]
   }
 ]
