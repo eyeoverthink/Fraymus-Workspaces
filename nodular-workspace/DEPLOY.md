@@ -41,3 +41,7 @@ Each run costs one credit (`FREE_CREDITS` per user). With Stripe configured, suc
 ## Agents on your VPS
 
 Run Ollama on a VPS (`ollama serve`, pull a model with tool support), set `OLLAMA_HOST` (and `OLLAMA_BASIC_AUTH` if behind a proxy), optionally `GROQ_API_KEY` as fallback. Mount a persistent volume at `DATA_DIR` so `agent.db` survives restarts. `config/` ships in the image.
+
+## Images
+
+Leave `IMAGE_PROVIDERS` unset for the free-first chain. Set `HF_TOKEN` if you want Hugging Face FLUX/SDXL. Leave `GEMINI_API_KEY` blank unless you accept Gemini image billing (no free tier is listed for `gemini-2.5-flash-image`). Do not add `openai` or `replicate` to `IMAGE_PROVIDERS` unless you mean to pay per image. `IMAGE_PROVIDERS=none` keeps the SVG placeholder and makes no image request. The upscaler still uses `REPLICATE_API_TOKEN` when that token is set.

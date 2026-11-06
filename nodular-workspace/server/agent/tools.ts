@@ -90,6 +90,17 @@ export const builtinTools: Tool[] = [
     async run(a, c) { return { memories: searchMemories(c.userId, String(a.query || ''), 8) } }
   },
   {
+    name: 'memory_recall', risk: 'safe', description: 'Return the most recent saved memories. Pass a query to filter them by keywords.',
+    parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 20 } } },
+    async run(a, c) {
+      const limit = Math.min(Math.max(parseInt(a.limit) || 8, 1), 20)
+      const query = String(a.query || '').trim()
+      if (query) return { memories: searchMemories(c.userId, query, limit) }
+      const rows = db.prepare('select id,agent_id,text from memories where user_id=? order by id desc limit ?').all(c.userId, limit) as any[]
+      return { memories: rows.map((r) => ({ id: r.id, text: r.text, agent: r.agent_id })) }
+    }
+  },
+  {
     name: 'web_search', risk: 'safe', description: 'Search the web. Returns titles, URLs and snippets.',
     parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     async run(a) { return { results: await webSearch(String(a.query || '')) } }
@@ -105,11 +116,11 @@ export const builtinTools: Tool[] = [
     }
   },
   {
-    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt (FLUX). Returns an imageUrl.',
+    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt using the free-first provider chain (Hugging Face, Gemini only if GEMINI_API_KEY is set, Pollinations, or a local server). OpenAI and Replicate are not called unless an operator lists them in IMAGE_PROVIDERS and sets their key. Returns an imageUrl.',
     parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] },
     async run(a) {
-      const { png, mocked } = await runFlux(String(a.prompt || ''))
-      return { imageUrl: await saveImage(png), placeholder: mocked }
+      const { png, mocked, provider, model } = await runFlux(String(a.prompt || ''))
+      return { imageUrl: await saveImage(png), placeholder: mocked, provider, model }
     }
   },
   {

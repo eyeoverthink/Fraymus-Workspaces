@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { providerStatus } from './llm'
+import { planImageProviders } from '../image/providers'
 import { allTools } from './tools'
 import { listAutomations, saveAutomation, deleteAutomation, runAutomation, automationRuns, installTemplate, TEMPLATES } from './automations'
 import { mcpStatus, mcpServers, importServers, removeServer } from './mcp'
@@ -12,6 +13,7 @@ const fail = (reply: any, e: any, code = 400) => reply.status(code).send({ error
 export function registerAgentRoutes(app: FastifyInstance) {
   app.get('/api/agent/status', async () => ({
     ...(await providerStatus()),
+    image: planImageProviders(process.env),
     mcp: mcpStatus(),
     tools: allTools().map((t) => ({ name: t.name, risk: t.risk, description: t.description }))
   }))

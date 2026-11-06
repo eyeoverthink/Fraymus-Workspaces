@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { generateImage } from './image/providers'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_SYSTEM = 'You are a FLUX prompt engineer. Convert user ideas into detailed, photorealistic FLUX.1 schnell prompts. Be specific about lighting, camera, texture. Output only the prompt.'
@@ -23,24 +24,10 @@ export async function runLlama(prompt: string, system = DEFAULT_SYSTEM): Promise
   return { text: data.choices?.[0]?.message?.content || prompt }
 }
 
-function escapeXml(s: string) {
-  return s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] as string))
-}
-
-export async function runFlux(prompt: string): Promise<{ png: Buffer; mocked: boolean }> {
-  const token = process.env.HF_TOKEN
-  if (!token) {
-    const svg = `<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#e5e7eb"/><circle cx="512" cy="430" r="170" fill="#6366f1"/><rect x="332" y="620" width="360" height="260" rx="40" fill="#6366f1"/><text x="50%" y="960" text-anchor="middle" fill="#111" font-family="monospace" font-size="24">FLUX placeholder - set HF_TOKEN: ${escapeXml(prompt.slice(0, 40))}</text></svg>`
-    return { png: await sharp(Buffer.from(svg)).png().toBuffer(), mocked: true }
-  }
-  const r = await fetch('https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 4, guidance_scale: 0 } })
-  })
-  if (!r.ok) throw new Error(`HF FLUX failed ${r.status}: ${(await r.text()).slice(0, 300)}`)
-  const raw = Buffer.from(await r.arrayBuffer())
-  return { png: await sharp(raw).png().toBuffer(), mocked: false }
+// Canvas flux nodes, /api/flux, and the generate_image tool all enter here.
+// The name stays runFlux so those call sites keep working; the provider chain is free-first.
+export async function runFlux(prompt: string): Promise<{ png: Buffer; mocked: boolean; provider: string; model?: string }> {
+  return generateImage(prompt)
 }
 
 export async function runRemover(input: Buffer): Promise<{ png: Buffer; engine: string }> {

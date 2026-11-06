@@ -97,8 +97,8 @@ fastify.post('/api/flux', async (req, reply) => {
   const { prompt } = (req.body as any) || {}
   if (!prompt) return reply.status(400).send({ error: 'prompt required' })
   try {
-    const { png, mocked } = await runFlux(String(prompt))
-    return reply.header('Content-Type', 'image/png').header('X-Mocked', String(mocked)).send(png)
+    const { png, mocked, provider } = await runFlux(String(prompt))
+    return reply.header('Content-Type', 'image/png').header('X-Mocked', String(mocked)).header('X-Image-Provider', provider).send(png)
   } catch (e: any) {
     return reply.status(500).send({ error: e.message })
   }
