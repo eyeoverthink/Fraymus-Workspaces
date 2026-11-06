@@ -67,26 +67,30 @@ async function replicateUpscale(input: Buffer, scale: number): Promise<Buffer> {
   return Buffer.from(await (await fetch(outUrl)).arrayBuffer())
 }
 
-export async function runUpscaler(input: Buffer, scale = 4): Promise<{ png: Buffer; from: string; to: string; engine: string }> {
+export async function runUpscaler(input: Buffer, scale = 4): Promise<{ png: Buffer; from: string; to: string; engine: string; kind: 'resize' | 'ai-upscale' }> {
   const meta = await sharp(input).metadata()
   const w = meta.width || 1024
   const h = meta.height || 1024
   const to = `${w * scale}x${h * scale}`
   let engine = 'sharp-lanczos3'
+  let kind: 'resize' | 'ai-upscale' = 'resize'
   let png: Buffer | null = null
 
-  if (process.env.REPLICATE_API_TOKEN) {
+  // A Replicate token alone must not spend money. ENABLE_PAID_REPLICATE=1 is the explicit opt-in.
+  // Sharp output is a resize, not AI upscaling.
+  if (process.env.ENABLE_PAID_REPLICATE === '1' && process.env.REPLICATE_API_TOKEN) {
     try {
       const ai = await replicateUpscale(input, scale)
       // Real-ESRGAN output must match the requested size; normalize so the contract holds.
       png = await sharp(ai).resize(w * scale, h * scale, { kernel: 'lanczos3' }).png({ compressionLevel: 8 }).toBuffer()
       engine = 'replicate-real-esrgan'
+      kind = 'ai-upscale'
     } catch (err) {
-      console.warn('Replicate upscale failed, falling back to sharp', err)
+      console.warn('Replicate upscale failed, falling back to sharp resize', err)
     }
   }
   if (!png) {
     png = await sharp(input).resize(w * scale, h * scale, { kernel: 'lanczos3', fastShrinkOnLoad: false }).png({ compressionLevel: 8 }).toBuffer()
   }
-  return { png, from: `${w}x${h}`, to, engine }
+  return { png, from: `${w}x${h}`, to, engine, kind }
 }

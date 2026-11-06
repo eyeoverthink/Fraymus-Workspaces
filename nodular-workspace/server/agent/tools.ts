@@ -116,7 +116,7 @@ export const builtinTools: Tool[] = [
     }
   },
   {
-    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt using the free-first provider chain (Hugging Face, Gemini only if GEMINI_API_KEY is set, Pollinations, or a local server). OpenAI and Replicate are not called unless an operator lists them in IMAGE_PROVIDERS and sets their key. Returns an imageUrl.',
+    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt using the free-first provider chain (Hugging Face, Pollinations, or a local server). Gemini image generation is billed (gemini-2.5-flash-image) and runs only when IMAGE_PROVIDERS lists gemini and GEMINI_IMAGE_BILLING_CONFIRMED=true. OpenAI and Replicate are not called unless an operator lists them in IMAGE_PROVIDERS and sets their key. Returns an imageUrl.',
     parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] },
     async run(a) {
       const { png, mocked, provider, model } = await runFlux(String(a.prompt || ''))
@@ -132,11 +132,11 @@ export const builtinTools: Tool[] = [
     }
   },
   {
-    name: 'upscale_image', risk: 'safe', description: 'Upscale an image URL by 2-4x. Returns imageUrl.',
+    name: 'upscale_image', risk: 'safe', description: 'Resize an image URL by 2-4x with a local sharp lanczos3 resize, which is not AI upscaling. Real-ESRGAN runs only when ENABLE_PAID_REPLICATE=1 and REPLICATE_API_TOKEN are both set. Returns imageUrl.',
     parameters: { type: 'object', properties: { imageUrl: { type: 'string' }, scale: { type: 'integer', minimum: 1, maximum: 4 } }, required: ['imageUrl'] },
     async run(a) {
-      const { png, from, to, engine } = await runUpscaler(await loadImage(String(a.imageUrl)), Math.min(Math.max(parseInt(a.scale) || 4, 1), 4))
-      return { imageUrl: await saveImage(png), from, to, engine }
+      const { png, from, to, engine, kind } = await runUpscaler(await loadImage(String(a.imageUrl)), Math.min(Math.max(parseInt(a.scale) || 4, 1), 4))
+      return { imageUrl: await saveImage(png), from, to, engine, kind }
     }
   },
   {

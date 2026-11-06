@@ -48,7 +48,7 @@ All free tier, no credit card:
 - Groq: https://console.groq.com - Llama 3.3 70B 14k tok/s
 - HuggingFace: https://huggingface.co/settings/tokens - FLUX schnell + RMBG-1.4
 
-Without keys, Groq returns a mock enhanced prompt and the remover/upscaler stay on sharp. Image generation follows `IMAGE_PROVIDERS` (default `huggingface,gemini,pollinations,local`). With nothing configured except that default, the only live call is the no-key [Pollinations](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) endpoint, which sends the prompt off this server. Set `IMAGE_PROVIDERS=none` for an SVG placeholder and no image request. OpenAI and Replicate are not called unless you list them.
+Without keys, Groq returns a mock enhanced prompt and the remover/upscaler stay on a local sharp resize. Image generation follows `IMAGE_PROVIDERS` (default `huggingface,pollinations,local`). With nothing configured except that default, the only live call is the no-key [Pollinations](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) endpoint, which sends the prompt off this server. Set `IMAGE_PROVIDERS=none` for an SVG placeholder and no image request. Gemini, OpenAI, and Replicate are not called unless you list them. Gemini also needs `GEMINI_IMAGE_BILLING_CONFIRMED=true`. Real-ESRGAN runs only when `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set.
 
 ## Deploy as Product
 
@@ -88,18 +88,18 @@ Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, `hype
 
 ## Image generation
 
-`generate_image`, `POST /api/flux`, and every flux node call one chain (`server/image/providers.ts`). Order is `IMAGE_PROVIDERS`. When that variable is unset the order is `huggingface`, `gemini`, `pollinations`, `local`. A provider that is not configured is skipped. If one fails (quota, auth, organization/workgroup), the server logs a short reason without the key and tries the next. If every provider that actually ran fails, the response is `Image generation failed. Tried ...` and names each one. If none ran (`IMAGE_PROVIDERS=none`, or every name skipped), the response is an SVG placeholder.
+`generate_image`, `POST /api/flux`, and every flux node call one chain (`server/image/providers.ts`). Order is `IMAGE_PROVIDERS`. When that variable is unset the order is `huggingface`, `pollinations`, `local`. A provider that is not configured is skipped. If one fails (quota, auth, organization/workgroup), the server logs a short reason without the key and tries the next. If every provider that actually ran fails, the response is `Image generation failed. Tried ...` and names each one. If none ran (`IMAGE_PROVIDERS=none`, or every name skipped), the response is an SVG placeholder.
 
 | Provider | When it runs | Cost |
 |---|---|---|
 | `huggingface` | `HF_TOKEN` set. Tries `black-forest-labs/FLUX.1-schnell`, then `stabilityai/stable-diffusion-xl-base-1.0`, on `router.huggingface.co` | Hugging Face Inference Providers free quota |
-| `gemini` | `GEMINI_API_KEY` set. Model `gemini-2.5-flash-image` (Nano Banana) | Google's pricing page lists no free tier for this model, so a key can bill. Leave the key blank to stay no-cost. [Pricing](https://ai.google.dev/gemini-api/docs/pricing) |
 | `pollinations` | Always, unless you remove it from the list. `GET https://image.pollinations.ai/prompt/...` | No key. Anonymous and rate-limited. The prompt leaves this server. [API notes](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) |
 | `local` | `LOCAL_IMAGE_URL` set. `LOCAL_IMAGE_KIND` is `a1111` (Automatic1111), `comfy` (ComfyUI), or `openai` / `ollama` (a local OpenAI-compatible `/v1/images/generations`; stock Ollama does not draw images) | Your machine |
+| `gemini` | Listed in `IMAGE_PROVIDERS`, `GEMINI_API_KEY` set, and `GEMINI_IMAGE_BILLING_CONFIRMED=true`. Model `gemini-2.5-flash-image` (Nano Banana). A key or the flag alone does nothing. | Billed. Google's pricing page lists no free tier for this model. [Pricing](https://ai.google.dev/gemini-api/docs/pricing) |
 | `openai` | Listed in `IMAGE_PROVIDERS` and `OPENAI_API_KEY` set. `POST https://api.openai.com/v1/images/generations`. Does not use `OPENAI_BASE_URL` | Paid. Organization verification errors are logged and skipped |
 | `replicate` | Listed in `IMAGE_PROVIDERS` and `REPLICATE_API_TOKEN` set | Paid |
 
-The upscaler still calls Replicate when `REPLICATE_API_TOKEN` is set, which is separate from this image chain. `video_director`, Director, and Lumen use `generate_image` for stills. The code-explainer builders draw with HTML, CSS, and SVG and do not call an image API.
+The upscaler is a local sharp lanczos3 resize unless `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set, in which case it calls Real-ESRGAN and falls back to sharp if that call fails. A token alone does not call Replicate. Sharp output is a resize, not AI upscaling. `video_director`, Director, and Lumen use `generate_image` for stills. The code-explainer builders draw with HTML, CSS, and SVG and do not call an image API.
 
 ## Media skills (MCP bridge + HyperFrames)
 

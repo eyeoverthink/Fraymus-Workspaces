@@ -85,7 +85,7 @@ You have FULL working code. No stubs. Your job to turn into production app:
 1. **Add persistence**: Replace in-memory Map with Supabase/Prisma Postgres. Workflows, runs, users.
 2. **Add auth**: Clerk or Supabase Auth. Users own workflows.
 3. **Improve remover**: Currently sharp fallback. Install @imgly/background-removal-node and implement true BiRefNet WASM local in server. Code: `import { removeBackground } from '@imgly/background-removal-node'`
-4. **Improve upscaler**: Currently sharp lanczos3. For true Real-ESRGAN, add `replicate` SDK and call `xinntao/realesrgan` or use `upscaler` npm with `esm` model. Keep sharp as fallback.
+4. **Improve upscaler**: Default is a local sharp lanczos3 resize, not AI upscaling. Real-ESRGAN already runs only when `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set, and falls back to sharp. Do not call Replicate just because the token exists.
 5. **Add file upload UI**: In canvas, allow dropping image as input to remover
 6. **Add tests**: `scripts/test-workflow.mjs` - test full 5-node execution
 7. **Polish UI**: Loading states, error toasts, image comparison slider (before/after remover/upscaler)
