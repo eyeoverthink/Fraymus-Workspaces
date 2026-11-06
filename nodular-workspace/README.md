@@ -48,7 +48,7 @@ All free tier, no credit card:
 - Groq: https://console.groq.com - Llama 3.3 70B 14k tok/s
 - HuggingFace: https://huggingface.co/settings/tokens - FLUX schnell + RMBG-1.4
 
-Without keys, app still works: Groq returns mock enhanced prompt, FLUX returns SVG placeholder, remover/upscaler use sharp local.
+Without keys, Groq returns a mock enhanced prompt and the remover/upscaler stay on sharp. Image generation follows `IMAGE_PROVIDERS` (default `huggingface,gemini,pollinations,local`). With nothing configured except that default, the only live call is the no-key [Pollinations](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) endpoint, which sends the prompt off this server. Set `IMAGE_PROVIDERS=none` for an SVG placeholder and no image request. OpenAI and Replicate are not called unless you list them.
 
 ## Deploy as Product
 
@@ -78,13 +78,28 @@ Written but untested without your accounts: Supabase store, Clerk auth, Stripe m
 Open the **Agents** tab: chat with Concierge or any of the specialists defined in `agents/*.md`.
 Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, `hyperframes_render`, HTTP tools, imported MCP tools) show an **Approve / Reject** card. The app owner does not see that card. Their own runs, and agents they delegate to, execute those tools immediately.
 
-- **Models**: `LLM_PROVIDERS` order (Ollama -> Groq -> OpenAI-compatible). Point `OLLAMA_HOST` at your VPS. xAI Grok uses that OpenAI-compatible path (`OPENAI_BASE_URL=https://api.x.ai/v1`, `OPENAI_API_KEY`, `OPENAI_MODEL` in `.env`; see `.env.example`). With nothing configured, a clearly labeled offline mock answers (a banner is shown).
+- **Models**: `LLM_PROVIDERS` order (Ollama -> Groq -> OpenAI-compatible). Point `OLLAMA_HOST` at your VPS. xAI Grok uses that OpenAI-compatible path (`OPENAI_BASE_URL=https://api.x.ai/v1`, `OPENAI_API_KEY`, `OPENAI_MODEL` in `.env`; see `.env.example`). With nothing configured, a clearly labeled offline mock answers (a banner is shown). That chat path does not generate images. `OPENAI_API_KEY` is not sent to an image API unless `IMAGE_PROVIDERS` lists `openai`.
 - **Edit agents**: each agent is one manifest file, `agents/<id>.md` (front-matter: id, name, role, description, greeting, model, tools; body = system prompt). Edit the file, use the **Connect** tab, or let a connected agent do it over MCP; runtime edits are stored as overrides in `DATA_DIR/agents/` and win over the shipped defaults. Users can also create their own agents via `POST /api/agents`.
 - **HTTP tools**: `config/http-tools.json` defines tools backed by your own services (Fraynix engine, Hermes, TTS). **These endpoint paths and body shapes are templates I guessed; adapt them to your real APIs.** A tool is skipped until every `${ENV:NAME}` it references is set.
 - **Data**: threads, memories and approvals live in `DATA_DIR/agent.db` (local SQLite).
 - **Safety**: `http_get` blocks private/loopback addresses (SSRF) unless `ALLOW_PRIVATE_FETCH=1`. Approval-risk tools still ask a person first, including inside a delegated agent, except for the app owner (below). A delegated run that is not the owner's cannot show an approval card, so the tool is refused instead of executed.
 - **Owner**: set `OWNER_USER_IDS` or `OWNER_USER_ID` to the signed-in app owner's Clerk user id (JWT `sub`, shaped like `user_...`). `MCP_ADMIN_USER`, when set, is an owner id too. A run authenticated with `MCP_ADMIN_TOKEN` is treated as the owner, and a delegated agent inherits that for the whole run, so `video_director` can call `hyperframes_render` without a prompt. `OWNER_EMAILS` is a comma-separated list of addresses (case-insensitive). A signed-in Clerk user is also an owner when one of those addresses is verified on their Clerk user. `verifyToken` on a default session token exposes `sub` and does not include email, so the server loads the user from the Clerk Backend API (`users.getUser`, `CLERK_SECRET_KEY`) and keeps only addresses whose `verification.status` is `verified`. Results are cached for about a minute. An unverified or missing email never matches, and the open-mode user id `local` is never an email owner. Leave the id and email fields blank and nobody is an owner: approval stays required. With `CLERK_SECRET_KEY` unset, every `/api` caller is the user id `local`, which is not an owner unless you list `local` (doing so approves every open-mode request). Other signed-in users and anonymous requests stay gated. Unattended automations never auto-approve, even when they belong to the owner.
-- **Tests**: `node scripts/test-agent.mjs` (server with `LLM_PROVIDERS=none`).
+- **Tests**: `node scripts/test-agent.mjs` (server with `LLM_PROVIDERS=none` and `IMAGE_PROVIDERS=none`).
+
+## Image generation
+
+`generate_image`, `POST /api/flux`, and every flux node call one chain (`server/image/providers.ts`). Order is `IMAGE_PROVIDERS`. When that variable is unset the order is `huggingface`, `gemini`, `pollinations`, `local`. A provider that is not configured is skipped. If one fails (quota, auth, organization/workgroup), the server logs a short reason without the key and tries the next. If every provider that actually ran fails, the response is `Image generation failed. Tried ...` and names each one. If none ran (`IMAGE_PROVIDERS=none`, or every name skipped), the response is an SVG placeholder.
+
+| Provider | When it runs | Cost |
+|---|---|---|
+| `huggingface` | `HF_TOKEN` set. Tries `black-forest-labs/FLUX.1-schnell`, then `stabilityai/stable-diffusion-xl-base-1.0`, on `router.huggingface.co` | Hugging Face Inference Providers free quota |
+| `gemini` | `GEMINI_API_KEY` set. Model `gemini-2.5-flash-image` (Nano Banana) | Google's pricing page lists no free tier for this model, so a key can bill. Leave the key blank to stay no-cost. [Pricing](https://ai.google.dev/gemini-api/docs/pricing) |
+| `pollinations` | Always, unless you remove it from the list. `GET https://image.pollinations.ai/prompt/...` | No key. Anonymous and rate-limited. The prompt leaves this server. [API notes](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) |
+| `local` | `LOCAL_IMAGE_URL` set. `LOCAL_IMAGE_KIND` is `a1111` (Automatic1111), `comfy` (ComfyUI), or `openai` / `ollama` (a local OpenAI-compatible `/v1/images/generations`; stock Ollama does not draw images) | Your machine |
+| `openai` | Listed in `IMAGE_PROVIDERS` and `OPENAI_API_KEY` set. `POST https://api.openai.com/v1/images/generations`. Does not use `OPENAI_BASE_URL` | Paid. Organization verification errors are logged and skipped |
+| `replicate` | Listed in `IMAGE_PROVIDERS` and `REPLICATE_API_TOKEN` set | Paid |
+
+The upscaler still calls Replicate when `REPLICATE_API_TOKEN` is set, which is separate from this image chain. `video_director`, Director, and Lumen use `generate_image` for stills. The code-explainer builders draw with HTML, CSS, and SVG and do not call an image API.
 
 ## Media skills (MCP bridge + HyperFrames)
 
@@ -99,7 +114,7 @@ Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, `hype
 | Hypit | **not integrated**: it is a skill for coding agents (Claude Code/Codex) with its own license, not a runnable node | - |
 | Yjs realtime co-editing | **not built** | - |
 
-The `video_director` agent writes and renders HyperFrames compositions. Tests: `npx tsx scripts/test-mcp.ts`, `npx tsx scripts/test-media.ts`.
+The `video_director` agent writes and renders HyperFrames compositions and can request a still from `generate_image`. Tests: `npx tsx scripts/test-mcp.ts`, `npx tsx scripts/test-media.ts`.
 
 ## Code-drawn explainer workflow
 

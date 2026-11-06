@@ -19,7 +19,7 @@
    |           [executor.ts - topological sort]
    |                 |
    |                 +--> /api/llama (Groq free) -> text
-   |                 +--> /api/flux (HF FLUX schnell free) -> image blob
+   |                 +--> /api/flux (free-first image chain) -> image blob
    |                 +--> /api/remover (BiRefNet free WASM) -> transparent PNG
    |                 +--> /api/upscaler (Sharp 4x free) -> 4K PNG
    |                 +--> /api/workflows/:id/run (deploy endpoint - your product)
@@ -34,7 +34,7 @@
 
 | Paid (Video) | Free (This Repo) | Implementation | Cost |
 |---|---|---|---|
-| Nano Banana 2 | FLUX.1 schnell | HF Inference API + sharp fallback SVG | $0 Apache 2.0 |
+| Nano Banana (Gemini image) | Free-first chain: HF FLUX/SDXL, Pollinations, local. Gemini only if GEMINI_API_KEY is set (Google lists no free tier for gemini-2.5-flash-image). OpenAI and Replicate opt-in | server/image/providers.ts | $0 unless a paid provider or Gemini key is enabled |
 | Claude Sonnet | Llama 3.3 70B | Groq API 14k tok/s | $0 |
 | Remove.bg | BiRefNet | @imgly/background-removal WASM + HF RMBG-1.4 | $0 local |
 | Magnific | Real-ESRGAN | Sharp lanczos3 4x + replicate optional | $0 local |
@@ -42,7 +42,7 @@
 ## Data Flow for 5-Node Chain
 
 1. Node 1 Llama: input prompt "mirror selfie" -> Groq -> enhanced prompt "UGC mirror selfie, iPhone flash, Gen-Z bedroom, vintage denim..."
-2. Node 2 FLUX: enhanced prompt -> HF FLUX schnell (4 steps) -> 1024x1024 blob URL
+2. Node 2 FLUX: enhanced prompt -> image provider chain -> png blob URL
 3. Node 3 Remover: blob URL -> fetch blob -> FormData -> /api/remover -> HF RMBG-1.4 returns transparent PNG -> blob URL
 4. Node 4 Upscaler: transparent PNG -> /api/upscaler -> sharp resize 4096x4096 lanczos3 -> blob URL
 5. Node 5 Preview: final blob URL + text -> HTML with <img> + deploy curl

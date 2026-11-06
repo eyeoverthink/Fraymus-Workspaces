@@ -22,7 +22,7 @@ const throws = (fn: () => unknown, m: string) => {
 
 const httpTools = JSON.parse(readFileSync(join(root, 'config/http-tools.json'), 'utf8')) as { name: string; description: string; url?: string; headers?: Record<string, string> }[]
 const known = new Set([
-  'memory_save', 'memory_search', 'web_search', 'http_get', 'generate_image', 'remove_background',
+  'memory_save', 'memory_search', 'memory_recall', 'web_search', 'http_get', 'generate_image', 'remove_background',
   'upscale_image', 'list_workflows', 'run_workflow', 'delegate_to_agent', 'hyperframes_render',
   'explainer_next_step', 'explainer_qa', 'asset_lookup', 'explainer_learn', 'read_explainer_skill',
   ...httpTools.map((d) => d.name)

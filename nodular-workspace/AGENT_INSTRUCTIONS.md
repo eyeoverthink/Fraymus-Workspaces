@@ -51,7 +51,7 @@ src/
 server/
   index.ts - FULL Fastify + Socket.io server, 6 routes:
     POST /api/llama - Groq Llama free, fallback mock if no key
-    POST /api/flux - HF FLUX schnell, fallback SVG placeholder if no key
+    POST /api/flux - free-first image chain (Hugging Face, optional Gemini, Pollinations, local). SVG placeholder only when no provider runs. OpenAI and Replicate are opt-in.
     POST /api/remover - BiRefNet via HF RMBG-1.4 if HF_TOKEN, else sharp local fallback (full implementation)
     POST /api/upscaler - Sharp lanczos3 4x upscale, real image resize, headers X-Upscale-From/To
     POST /api/rea/suggest - Heuristic + Groq for smart suggestions, broadcasts via io.emit

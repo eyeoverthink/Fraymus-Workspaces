@@ -1,0 +1,210 @@
+// Provider-chain tests. Every HTTP call is mocked. No live image API is contacted.
+import sharp from 'sharp'
+import {
+  DEFAULT_IMAGE_PROVIDERS, PAID_IMAGE_PROVIDERS, failureMessage, generateImage, planImageProviders, redactSecrets,
+  type Env, type ImageFetch
+} from '../server/image/providers.ts'
+
+let failed = 0
+const ok = (c: unknown, m: string) => { console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); if (!c) failed++ }
+
+const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#336699' } }).png().toBuffer()
+const b64 = png.toString('base64')
+
+type Call = { url: string; init?: RequestInit }
+function mock(handler: (url: string, init: RequestInit | undefined, calls: Call[]) => Response | Promise<Response>): { fetch: ImageFetch; calls: Call[] } {
+  const calls: Call[] = []
+  const fetch: ImageFetch = async (url, init) => {
+    calls.push({ url, init })
+    return handler(url, init, calls)
+  }
+  return { fetch, calls }
+}
+const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+const bytes = (buf: Buffer, type = 'image/png', status = 200) => new Response(buf, { status, headers: { 'content-type': type } })
+const hosts = (calls: Call[]) => calls.map((c) => new URL(c.url).host + new URL(c.url).pathname)
+
+ok(DEFAULT_IMAGE_PROVIDERS.join() === 'huggingface,gemini,pollinations,local', 'default order is free providers')
+ok(PAID_IMAGE_PROVIDERS.join() === 'openai,replicate', 'paid names are openai and replicate')
+
+const paidKeys: Env = { OPENAI_API_KEY: 'sk-test-openai-key-0001', REPLICATE_API_TOKEN: 'r8_testreplicatetoken0001' }
+const def = planImageProviders({ ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001' })
+ok(def.order.join() === 'huggingface,gemini,pollinations,local', 'unset IMAGE_PROVIDERS uses the default order')
+ok(def.active.join() === 'huggingface,pollinations', 'default active skips gemini and local when unset: ' + def.active.join())
+ok(!def.active.includes('openai') && !def.active.includes('replicate'), 'paid providers stay out of the default plan')
+ok(def.gated.map((g) => g.name).join() === 'openai,replicate', 'paid keys without a listing are gated')
+
+ok(planImageProviders({ IMAGE_PROVIDERS: 'none', ...paidKeys }).active.length === 0, 'none selects nothing even if paid keys exist')
+ok(planImageProviders({ IMAGE_PROVIDERS: '' }).active.length === 0, 'blank IMAGE_PROVIDERS selects nothing')
+const optIn = planImageProviders({ IMAGE_PROVIDERS: 'openai,replicate', ...paidKeys })
+ok(optIn.active.join() === 'openai,replicate', 'paid providers run only when listed and keyed')
+ok(planImageProviders({ IMAGE_PROVIDERS: 'openai,replicate' }).active.length === 0, 'listed paid providers without keys are skipped')
+
+const secret = 'sk-live-abcdefghijklmnopqrstuvwxyz'
+const orgBody = { error: { message: `organization workgroup mismatch for key ${secret}`, type: 'invalid_request_error' } }
+
+{
+  const logs: string[] = []
+  const seen: string[] = []
+  const { fetch, calls } = mock(async (url) => {
+    const host = new URL(url).host
+    seen.push(host)
+    if (url.includes('router.huggingface.co')) return json(401, { error: 'unauthorized' })
+    if (url.includes('generativelanguage.googleapis.com')) return json(429, { error: { message: 'quota exceeded' } })
+    if (url.includes('image.pollinations.ai')) return bytes(png, 'image/jpeg')
+    if (url.includes('api.openai.com') || url.includes('api.replicate.com')) throw new Error('paid host was called')
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('a red fox', {
+    fetch,
+    log: (l) => logs.push(l),
+    env: { ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001', GEMINI_API_KEY: 'AIzaTestGeminiKey0001234567890' }
+  })
+  ok(out.provider === 'pollinations' && out.mocked === false, 'falls through HF and Gemini to Pollinations')
+  const order = seen.filter((host, i) => host !== seen[i - 1])
+  ok(order.join() === 'router.huggingface.co,generativelanguage.googleapis.com,image.pollinations.ai', 'fallback order: ' + order.join())
+  ok(calls.every((c) => !String(c.url).includes('api.openai.com') && !String(c.url).includes('api.replicate.com')), 'paid hosts are not called when unlisted')
+  ok(logs.some((l) => l.startsWith('image provider huggingface failed:')) && logs.some((l) => l.includes('quota exceeded')), 'failures are logged with a short reason')
+  const geminiCall = calls.find((c) => c.url.includes('generativelanguage'))!
+  ok(!geminiCall.url.includes('AIza'), 'Gemini key stays out of the URL')
+  ok((geminiCall.init?.headers as Record<string, string>)['x-goog-api-key']?.startsWith('AIza'), 'Gemini key is a header')
+  const meta = await sharp(out.png).metadata()
+  ok(meta.format === 'png' && meta.width === 8, 'output is normalized to png')
+}
+
+{
+  const logs: string[] = []
+  const { fetch, calls } = mock(async (url) => {
+    if (url.includes('api.openai.com')) return json(400, orgBody)
+    if (url.includes('image.pollinations.ai')) return bytes(png)
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('a red fox', {
+    fetch,
+    log: (l) => logs.push(l),
+    env: { IMAGE_PROVIDERS: 'openai,pollinations', OPENAI_API_KEY: secret }
+  })
+  ok(out.provider === 'pollinations', 'openai org error falls through to the next provider')
+  ok(hosts(calls)[0] === 'api.openai.com/v1/images/generations', 'opted-in openai is called first')
+  const body = JSON.parse(String(calls[0].init?.body))
+  ok(body.model === 'gpt-image-1' && body.prompt === 'a red fox', 'openai images request uses gpt-image-1')
+  const joined = logs.join('\n')
+  ok(joined.includes('workgroup') && joined.includes('image provider openai failed:'), 'org/workgroup failure is logged')
+  ok(!joined.includes(secret) && !joined.includes('sk-live'), 'logs do not contain the key')
+}
+
+{
+  const logs: string[] = []
+  const { fetch } = mock(async (url) => {
+    if (url.includes('router.huggingface.co')) return json(503, { error: 'model not found' })
+    if (url.includes('generativelanguage')) return json(403, { error: { message: 'billing disabled for AIzaShouldNotLeak0001234567' } })
+    if (url.includes('image.pollinations.ai')) return json(402, { error: 'rate limited' })
+    throw new Error('unexpected ' + url)
+  })
+  let message = ''
+  try {
+    await generateImage('a red fox', {
+      fetch,
+      log: (l) => logs.push(l),
+      env: {
+        HF_TOKEN: 'hf_shouldnotleaktoken0001',
+        GEMINI_API_KEY: 'AIzaShouldNotLeak0001234567'
+      }
+    })
+  } catch (e: any) { message = e.message }
+  ok(message.startsWith('Image generation failed. Tried huggingface'), 'all-fail message names huggingface: ' + message)
+  ok(message.includes('gemini') && message.includes('pollinations'), 'all-fail message names every provider tried')
+  ok(message.includes('model not found') && message.includes('rate limited'), 'all-fail message keeps the short reasons')
+  ok(!message.includes('hf_shouldnotleak') && !message.includes('AIzaShouldNotLeak') && !logs.join('\n').includes('AIzaShouldNotLeak'), 'error text and logs omit keys')
+  ok(!message.includes('openai') && !message.includes('replicate'), 'untried paid providers are not blamed')
+  const redacted = redactSecrets(`token hf_shouldnotleaktoken0001 and ${secret}`, { HF_TOKEN: 'hf_shouldnotleaktoken0001', OPENAI_API_KEY: secret })
+  ok(redacted === 'token [redacted] and [redacted]', 'redactSecrets strips env values: ' + redacted)
+  ok(failureMessage([{ name: 'huggingface', reason: '401 unauthorized' }]).includes('huggingface (401 unauthorized)'), 'failureMessage shape')
+}
+
+{
+  let called = false
+  const { fetch } = mock(async () => { called = true; return bytes(png) })
+  const out = await generateImage('offline', { fetch, env: { IMAGE_PROVIDERS: 'none', OPENAI_API_KEY: secret, REPLICATE_API_TOKEN: 'r8_testreplicatetoken0001' } })
+  ok(out.mocked === true && out.provider === 'placeholder' && !called, 'none returns a placeholder and makes no request')
+  const meta = await sharp(out.png).metadata()
+  ok(meta.format === 'png' && meta.width === 1024, 'placeholder is a png')
+}
+
+{
+  const { fetch, calls } = mock(async (url, init) => {
+    if (url.endsWith('/sdapi/v1/txt2img')) {
+      const body = JSON.parse(String(init?.body))
+      if (body.prompt !== 'local fox') throw new Error('bad prompt')
+      return json(200, { images: [b64] })
+    }
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('local fox', { fetch, env: { IMAGE_PROVIDERS: 'local', LOCAL_IMAGE_URL: 'http://127.0.0.1:7860' } })
+  ok(out.provider === 'local' && out.model === 'a1111' && calls.length === 1, 'local Automatic1111 is used when configured')
+}
+
+{
+  const { fetch, calls } = mock(async (url) => {
+    if (url.endsWith('/prompt')) return json(200, { prompt_id: 'job1' })
+    if (url.endsWith('/history/job1')) return json(200, { job1: { outputs: { '9': { images: [{ filename: 'nodular_1.png', subfolder: '', type: 'output' }] } } } })
+    if (url.includes('/view?')) return bytes(png)
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('comfy fox', {
+    fetch,
+    env: { IMAGE_PROVIDERS: 'local', LOCAL_IMAGE_URL: 'http://127.0.0.1:8188', LOCAL_IMAGE_KIND: 'comfy' }
+  })
+  ok(out.provider === 'local' && out.model === 'sd_xl_base_1.0.safetensors' && calls.length === 3, 'local ComfyUI prompt/history/view')
+}
+
+{
+  const { fetch, calls } = mock(async (url) => {
+    if (url.includes('/v1/images/generations')) return json(200, { data: [{ b64_json: b64 }] })
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('ollama fox', {
+    fetch,
+    env: { IMAGE_PROVIDERS: 'local', LOCAL_IMAGE_URL: 'http://127.0.0.1:11434', LOCAL_IMAGE_KIND: 'ollama' }
+  })
+  ok(out.model === 'local-openai' && calls[0].url === 'http://127.0.0.1:11434/v1/images/generations', 'ollama-adjacent local endpoint')
+}
+
+{
+  let called = false
+  const { fetch } = mock(async () => { called = true; return bytes(png) })
+  let message = ''
+  try {
+    await generateImage('nope', { fetch, log: () => {}, env: { IMAGE_PROVIDERS: 'local', LOCAL_IMAGE_URL: 'https://api.openai.com/v1', OPENAI_API_KEY: secret } })
+  } catch (e: any) { message = e.message }
+  ok(!called && message.includes('local') && message.includes('paid host'), 'local refuses api.openai.com: ' + message)
+}
+
+{
+  const { fetch, calls } = mock(async (url) => {
+    if (url.includes('api.replicate.com')) return json(201, { status: 'succeeded', output: ['https://cdn.example/out.png'] })
+    if (url === 'https://cdn.example/out.png') return bytes(png)
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('rep fox', {
+    fetch,
+    env: { IMAGE_PROVIDERS: 'replicate', REPLICATE_API_TOKEN: 'r8_testreplicatetoken0001' }
+  })
+  ok(out.provider === 'replicate' && calls[0].url.includes('/models/black-forest-labs/flux-schnell/predictions'), 'replicate runs only when listed')
+  const missed = planImageProviders({ REPLICATE_API_TOKEN: 'r8_testreplicatetoken0001' })
+  ok(!missed.active.includes('replicate'), 'replicate token alone does not enter the default chain')
+}
+
+{
+  const { fetch, calls } = mock(async (url) => {
+    if (url.includes('FLUX.1-schnell')) return json(404, { error: 'model not available' })
+    if (url.includes('stable-diffusion-xl-base-1.0')) return bytes(png)
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('hf fox', { fetch, env: { IMAGE_PROVIDERS: 'huggingface', HF_TOKEN: 'hf_testtokenvalue0001' } })
+  ok(out.provider === 'huggingface' && out.model?.includes('stable-diffusion-xl'), 'Hugging Face tries SDXL after FLUX fails')
+  ok(calls.length === 2, 'both HF models were requested')
+}
+
+console.log(failed ? `\n${failed} failed` : '\nimage provider tests ok')
+process.exit(failed ? 1 : 0)

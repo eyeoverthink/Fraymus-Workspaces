@@ -41,7 +41,7 @@ export function topoSort(nodes: any[], edges: any[]): string[] {
 
 export type PipelineResult = {
   status: 'success' | 'failed'
-  results: Record<string, { type: string; durationMs: number; error?: string; text?: string; imageUrl?: string }>
+  results: Record<string, { type: string; durationMs: number; error?: string; text?: string; imageUrl?: string; provider?: string; placeholder?: boolean }>
   imageUrl?: string
   html?: string
   durationMs: number
@@ -75,9 +75,11 @@ export async function runPipeline(nodes: any[], edges: any[], opts: { prompt?: s
         texts[id] = r.text = out.text
       } else if (k === 'flux') {
         const prompt = upstreamText || opts.prompt || node.data?.prompt || 'mirror selfie'
-        const { png } = await runFlux(prompt)
-        buffers[id] = png
-        r.imageUrl = await saveImage(png)
+        const generated = await runFlux(prompt)
+        buffers[id] = generated.png
+        r.imageUrl = await saveImage(generated.png)
+        r.provider = generated.provider
+        r.placeholder = generated.mocked
       } else if (k === 'remover') {
         if (!upstreamImg) throw new Error('Remover needs an input image')
         const { png } = await runRemover(upstreamImg)

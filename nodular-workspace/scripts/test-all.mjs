@@ -15,6 +15,13 @@ const env = {
   PORT: port,
   DATA_DIR: dataDir,
   LLM_PROVIDERS: 'none',
+  // Stay offline. The default image chain would call Pollinations (no key).
+  IMAGE_PROVIDERS: 'none',
+  HF_TOKEN: '',
+  GEMINI_API_KEY: '',
+  OPENAI_API_KEY: '',
+  REPLICATE_API_TOKEN: '',
+  LOCAL_IMAGE_URL: '',
   BASE: base,
   BASE_URL: base,
   MCP_ADMIN_TOKEN: 'nodular-test-owner-admin-token-0001',
@@ -43,7 +50,7 @@ const run = (file) => new Promise((res) => {
 let failed = 0
 try {
   await ready()
-  for (const f of ['scripts/test-owner.ts', 'scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-explainer.ts']) {
+  for (const f of ['scripts/test-image-providers.ts', 'scripts/test-owner.ts', 'scripts/test-agent.mjs', 'scripts/test-mcp-server.mjs', 'scripts/test-workflow.mjs', 'scripts/test-automations.mjs', 'scripts/test-explainer.ts']) {
     console.log(`\n== ${f}`)
     if (await run(f)) failed++
   }
