@@ -1,12 +1,16 @@
 import sharp from 'sharp'
 
-// Free-first image generation. Paid hosts are called only when IMAGE_PROVIDERS
-// lists them and their key is set. Nothing here prints a key.
+// Free-first image generation. Gemini (gemini-2.5-flash-image) is billed, so it
+// runs only when IMAGE_PROVIDERS lists it and GEMINI_IMAGE_BILLING_CONFIRMED=true.
+// OpenAI and Replicate run only when listed and their key is set.
+// Nothing here prints a key.
 
-export const DEFAULT_IMAGE_PROVIDERS = ['huggingface', 'gemini', 'pollinations', 'local'] as const
+export const DEFAULT_IMAGE_PROVIDERS = ['huggingface', 'pollinations', 'local'] as const
+/** Billed image models. Not in the default order. */
+export const BILLED_IMAGE_PROVIDERS = ['gemini'] as const
 export const PAID_IMAGE_PROVIDERS = ['openai', 'replicate'] as const
 
-const KNOWN = new Set<string>([...DEFAULT_IMAGE_PROVIDERS, ...PAID_IMAGE_PROVIDERS])
+const KNOWN = new Set<string>([...DEFAULT_IMAGE_PROVIDERS, ...BILLED_IMAGE_PROVIDERS, ...PAID_IMAGE_PROVIDERS])
 
 export type Env = Record<string, string | undefined>
 export type ImageFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -19,7 +23,7 @@ export type ImagePlan = {
   active: string[]
   /** Listed but not called (missing key, unknown name). */
   skipped: ProviderSkip[]
-  /** Paid providers whose key is set but which were not listed. Never called. */
+  /** Billed or paid providers whose key is set but which were not listed. Never called. */
   gated: ProviderSkip[]
 }
 
@@ -58,10 +62,14 @@ function listedProviders(env: Env): string[] {
   return names.filter((n) => n !== 'none')
 }
 
+function geminiConfirmed(env: Env): boolean {
+  return env.GEMINI_IMAGE_BILLING_CONFIRMED === 'true'
+}
+
 function configured(name: string, env: Env): boolean {
   switch (name) {
     case 'huggingface': return !!env.HF_TOKEN?.trim()
-    case 'gemini': return !!env.GEMINI_API_KEY?.trim()
+    case 'gemini': return !!env.GEMINI_API_KEY?.trim() && geminiConfirmed(env)
     case 'pollinations': return true
     case 'local': return !!env.LOCAL_IMAGE_URL?.trim()
     case 'openai': return !!env.OPENAI_API_KEY?.trim()
@@ -70,10 +78,17 @@ function configured(name: string, env: Env): boolean {
   }
 }
 
-function skipReason(name: string): string {
+function credentialPresent(name: string, env: Env): boolean {
+  if (name === 'gemini') return !!env.GEMINI_API_KEY?.trim()
+  return configured(name, env)
+}
+
+function skipReason(name: string, env: Env): string {
   switch (name) {
     case 'huggingface': return 'HF_TOKEN not set'
-    case 'gemini': return 'GEMINI_API_KEY not set'
+    case 'gemini':
+      if (!env.GEMINI_API_KEY?.trim()) return 'GEMINI_API_KEY not set'
+      return 'GEMINI_IMAGE_BILLING_CONFIRMED is not true'
     case 'local': return 'LOCAL_IMAGE_URL not set'
     case 'openai': return 'OPENAI_API_KEY not set'
     case 'replicate': return 'REPLICATE_API_TOKEN not set'
@@ -91,15 +106,20 @@ export function planImageProviders(env: Env = process.env): ImagePlan {
       continue
     }
     if (!configured(name, env)) {
-      skipped.push({ name, reason: skipReason(name) })
+      skipped.push({ name, reason: skipReason(name, env) })
       continue
     }
     active.push(name)
   }
   const gated: ProviderSkip[] = []
-  for (const name of PAID_IMAGE_PROVIDERS) {
-    if (!order.includes(name) && configured(name, env)) {
-      gated.push({ name, reason: 'opt-in only; not listed in IMAGE_PROVIDERS' })
+  for (const name of [...BILLED_IMAGE_PROVIDERS, ...PAID_IMAGE_PROVIDERS]) {
+    if (!order.includes(name) && credentialPresent(name, env)) {
+      gated.push({
+        name,
+        reason: name === 'gemini'
+          ? 'billed; list gemini in IMAGE_PROVIDERS and set GEMINI_IMAGE_BILLING_CONFIRMED=true'
+          : 'opt-in only; not listed in IMAGE_PROVIDERS'
+      })
     }
   }
   return { order, active, skipped, gated }
@@ -194,6 +214,9 @@ async function fromHuggingFace(prompt: string, env: Env, fetchImpl: ImageFetch):
 }
 
 async function fromGemini(prompt: string, env: Env, fetchImpl: ImageFetch): Promise<{ png: Buffer; model: string }> {
+  if (!env.GEMINI_API_KEY?.trim() || !geminiConfirmed(env)) {
+    throw new Error('GEMINI_IMAGE_BILLING_CONFIRMED is not true')
+  }
   const model = env.GEMINI_IMAGE_MODEL?.trim() || 'gemini-2.5-flash-image'
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
   const res = await postJson(fetchImpl, url, {

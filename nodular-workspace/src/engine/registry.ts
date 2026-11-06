@@ -41,12 +41,12 @@ export const FREE_REGISTRY = {
     id: 'upscaler-realesrgan',
     name: 'Real-ESRGAN 4x - Upscaler',
     replaces: 'Paid Magnific / Topaz API',
-    provider: 'Sharp + Real-ESRGAN WASM - FREE local',
-    endpoint: '/api/upscaler - local sharp lanczos3 4x',
-    cost: 'FREE - sharp local, no API',
+    provider: 'Sharp lanczos3 resize - FREE local',
+    endpoint: '/api/upscaler - local sharp lanczos3 resize',
+    cost: 'FREE local resize. Real-ESRGAN only if ENABLE_PAID_REPLICATE=1 and REPLICATE_API_TOKEN are both set',
     inputs: [{ name: 'imageUrl', type: 'image', required: true }, { name: 'scale', type: 'number', default: 4 }],
-    outputs: [{ name: 'imageUrl', type: 'image', description: '4K upscaled image' }],
-    docs: 'Sharp lanczos3 4x. For true Real-ESRGAN, swap with replicate.com/xinntao/realesrgan free tier',
+    outputs: [{ name: 'imageUrl', type: 'image', description: 'Resized image (4x by default)' }],
+    docs: 'Sharp lanczos3 resize by default, not AI upscaling. Real-ESRGAN runs only when ENABLE_PAID_REPLICATE=1 and REPLICATE_API_TOKEN are both set.',
     free: true
   },
   'html-preview': {

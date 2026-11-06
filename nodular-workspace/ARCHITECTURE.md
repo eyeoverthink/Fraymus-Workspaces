@@ -34,10 +34,10 @@
 
 | Paid (Video) | Free (This Repo) | Implementation | Cost |
 |---|---|---|---|
-| Nano Banana (Gemini image) | Free-first chain: HF FLUX/SDXL, Pollinations, local. Gemini only if GEMINI_API_KEY is set (Google lists no free tier for gemini-2.5-flash-image). OpenAI and Replicate opt-in | server/image/providers.ts | $0 unless a paid provider or Gemini key is enabled |
+| Nano Banana (Gemini image) | Free-first chain: HF FLUX/SDXL, Pollinations, local. Gemini (`gemini-2.5-flash-image`) runs only when listed in IMAGE_PROVIDERS and GEMINI_IMAGE_BILLING_CONFIRMED=true. OpenAI and Replicate opt-in | server/image/providers.ts | $0 unless a paid provider is listed or Gemini billing is confirmed |
 | Claude Sonnet | Llama 3.3 70B | Groq API 14k tok/s | $0 |
 | Remove.bg | BiRefNet | @imgly/background-removal WASM + HF RMBG-1.4 | $0 local |
-| Magnific | Real-ESRGAN | Sharp lanczos3 4x + replicate optional | $0 local |
+| Magnific | Sharp resize (Real-ESRGAN opt-in) | Sharp lanczos3 resize. Real-ESRGAN only when ENABLE_PAID_REPLICATE=1 and REPLICATE_API_TOKEN are both set | $0 local unless that flag is 1 |
 
 ## Data Flow for 5-Node Chain
 

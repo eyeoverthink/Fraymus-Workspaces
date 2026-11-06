@@ -120,8 +120,8 @@ fastify.post('/api/upscaler', async (req, reply) => {
     const { buffer, fields } = await readImageInput(req)
     if (!buffer) return reply.status(400).send({ error: 'No image' })
     const scale = Math.min(Math.max(parseInt(fields.scale) || 4, 1), 4)
-    const { png, from, to, engine } = await runUpscaler(buffer, scale)
-    return reply.header('Content-Type', 'image/png').header('X-Upscale-From', from).header('X-Upscale-To', to).header('X-Upscaler', engine).send(png)
+    const { png, from, to, engine, kind } = await runUpscaler(buffer, scale)
+    return reply.header('Content-Type', 'image/png').header('X-Upscale-From', from).header('X-Upscale-To', to).header('X-Upscaler', engine).header('X-Upscale-Kind', kind).send(png)
   } catch (e: any) {
     return reply.status(500).send({ error: e.message })
   }

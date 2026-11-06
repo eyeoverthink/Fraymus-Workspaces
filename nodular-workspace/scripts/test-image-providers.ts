@@ -1,9 +1,10 @@
 // Provider-chain tests. Every HTTP call is mocked. No live image API is contacted.
 import sharp from 'sharp'
 import {
-  DEFAULT_IMAGE_PROVIDERS, PAID_IMAGE_PROVIDERS, failureMessage, generateImage, planImageProviders, redactSecrets,
+  BILLED_IMAGE_PROVIDERS, DEFAULT_IMAGE_PROVIDERS, PAID_IMAGE_PROVIDERS, failureMessage, generateImage, planImageProviders, redactSecrets,
   type Env, type ImageFetch
 } from '../server/image/providers.ts'
+import { runUpscaler } from '../server/services.ts'
 
 let failed = 0
 const ok = (c: unknown, m: string) => { console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); if (!c) failed++ }
@@ -24,15 +25,27 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const bytes = (buf: Buffer, type = 'image/png', status = 200) => new Response(buf, { status, headers: { 'content-type': type } })
 const hosts = (calls: Call[]) => calls.map((c) => new URL(c.url).host + new URL(c.url).pathname)
 
-ok(DEFAULT_IMAGE_PROVIDERS.join() === 'huggingface,gemini,pollinations,local', 'default order is free providers')
+ok(DEFAULT_IMAGE_PROVIDERS.join() === 'huggingface,pollinations,local', 'default order is free providers')
+ok(!DEFAULT_IMAGE_PROVIDERS.includes('gemini' as never), 'gemini is not in the default order')
+ok(BILLED_IMAGE_PROVIDERS.join() === 'gemini', 'gemini is the billed opt-in provider')
 ok(PAID_IMAGE_PROVIDERS.join() === 'openai,replicate', 'paid names are openai and replicate')
 
 const paidKeys: Env = { OPENAI_API_KEY: 'sk-test-openai-key-0001', REPLICATE_API_TOKEN: 'r8_testreplicatetoken0001' }
-const def = planImageProviders({ ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001' })
-ok(def.order.join() === 'huggingface,gemini,pollinations,local', 'unset IMAGE_PROVIDERS uses the default order')
-ok(def.active.join() === 'huggingface,pollinations', 'default active skips gemini and local when unset: ' + def.active.join())
-ok(!def.active.includes('openai') && !def.active.includes('replicate'), 'paid providers stay out of the default plan')
-ok(def.gated.map((g) => g.name).join() === 'openai,replicate', 'paid keys without a listing are gated')
+const geminiKey = 'AIzaTestGeminiKey0001234567890'
+const def = planImageProviders({ ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001', GEMINI_API_KEY: geminiKey })
+ok(def.order.join() === 'huggingface,pollinations,local', 'unset IMAGE_PROVIDERS uses the default order')
+ok(def.active.join() === 'huggingface,pollinations', 'default active skips local and does not call gemini: ' + def.active.join())
+ok(!def.active.includes('gemini') && !def.active.includes('openai') && !def.active.includes('replicate'), 'billed and paid providers stay out of the default plan')
+ok(def.gated.map((g) => g.name).join() === 'gemini,openai,replicate', 'gemini and paid keys without a listing are gated')
+
+const listedUnconfirmed = planImageProviders({ IMAGE_PROVIDERS: 'gemini,pollinations', GEMINI_API_KEY: geminiKey })
+ok(listedUnconfirmed.active.join() === 'pollinations', 'listing gemini without the billing flag does not activate it')
+ok(listedUnconfirmed.skipped.some((s) => s.name === 'gemini' && s.reason.includes('GEMINI_IMAGE_BILLING_CONFIRMED')), 'unconfirmed gemini is skipped with the flag reason')
+const confirmed = planImageProviders({ IMAGE_PROVIDERS: 'gemini', GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: 'true' })
+ok(confirmed.active.join() === 'gemini', 'gemini runs when listed, keyed, and GEMINI_IMAGE_BILLING_CONFIRMED=true')
+ok(planImageProviders({ IMAGE_PROVIDERS: 'gemini', GEMINI_IMAGE_BILLING_CONFIRMED: 'true' }).active.length === 0, 'the billing flag without a key does not call gemini')
+ok(!planImageProviders({ GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: 'true' }).active.includes('gemini'), 'the billing flag does not add gemini to the default order')
+ok(!planImageProviders({ IMAGE_PROVIDERS: 'gemini', GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: '1' }).active.includes('gemini'), 'only the exact value true confirms gemini billing')
 
 ok(planImageProviders({ IMAGE_PROVIDERS: 'none', ...paidKeys }).active.length === 0, 'none selects nothing even if paid keys exist')
 ok(planImageProviders({ IMAGE_PROVIDERS: '' }).active.length === 0, 'blank IMAGE_PROVIDERS selects nothing')
@@ -50,7 +63,7 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
     const host = new URL(url).host
     seen.push(host)
     if (url.includes('router.huggingface.co')) return json(401, { error: 'unauthorized' })
-    if (url.includes('generativelanguage.googleapis.com')) return json(429, { error: { message: 'quota exceeded' } })
+    if (url.includes('generativelanguage.googleapis.com')) throw new Error('gemini was called without confirmation')
     if (url.includes('image.pollinations.ai')) return bytes(png, 'image/jpeg')
     if (url.includes('api.openai.com') || url.includes('api.replicate.com')) throw new Error('paid host was called')
     throw new Error('unexpected ' + url)
@@ -58,18 +71,45 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
   const out = await generateImage('a red fox', {
     fetch,
     log: (l) => logs.push(l),
-    env: { ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001', GEMINI_API_KEY: 'AIzaTestGeminiKey0001234567890' }
+    env: { ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001', GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: 'true' }
   })
-  ok(out.provider === 'pollinations' && out.mocked === false, 'falls through HF and Gemini to Pollinations')
+  ok(out.provider === 'pollinations' && out.mocked === false, 'falls through HF to Pollinations and skips unlisted Gemini')
   const order = seen.filter((host, i) => host !== seen[i - 1])
-  ok(order.join() === 'router.huggingface.co,generativelanguage.googleapis.com,image.pollinations.ai', 'fallback order: ' + order.join())
-  ok(calls.every((c) => !String(c.url).includes('api.openai.com') && !String(c.url).includes('api.replicate.com')), 'paid hosts are not called when unlisted')
-  ok(logs.some((l) => l.startsWith('image provider huggingface failed:')) && logs.some((l) => l.includes('quota exceeded')), 'failures are logged with a short reason')
-  const geminiCall = calls.find((c) => c.url.includes('generativelanguage'))!
-  ok(!geminiCall.url.includes('AIza'), 'Gemini key stays out of the URL')
-  ok((geminiCall.init?.headers as Record<string, string>)['x-goog-api-key']?.startsWith('AIza'), 'Gemini key is a header')
+  ok(order.join() === 'router.huggingface.co,image.pollinations.ai', 'fallback order: ' + order.join())
+  ok(calls.every((c) => !String(c.url).includes('generativelanguage') && !String(c.url).includes('api.openai.com') && !String(c.url).includes('api.replicate.com')), 'gemini and paid hosts are not called when unlisted')
+  ok(logs.some((l) => l.startsWith('image provider huggingface failed:')), 'failures are logged with a short reason')
   const meta = await sharp(out.png).metadata()
   ok(meta.format === 'png' && meta.width === 8, 'output is normalized to png')
+}
+
+{
+  const logs: string[] = []
+  const { fetch, calls } = mock(async (url) => {
+    if (url.includes('generativelanguage.googleapis.com')) return json(429, { error: { message: 'quota exceeded' } })
+    if (url.includes('image.pollinations.ai')) return bytes(png, 'image/jpeg')
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('a red fox', {
+    fetch,
+    log: (l) => logs.push(l),
+    env: { IMAGE_PROVIDERS: 'gemini,pollinations', GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: 'true' }
+  })
+  ok(out.provider === 'pollinations', 'confirmed gemini failure falls through to the next provider')
+  const geminiCall = calls.find((c) => c.url.includes('generativelanguage'))!
+  ok(geminiCall.url.includes('/models/gemini-2.5-flash-image:generateContent'), 'confirmed gemini uses gemini-2.5-flash-image')
+  ok(!geminiCall.url.includes('AIza'), 'Gemini key stays out of the URL')
+  ok((geminiCall.init?.headers as Record<string, string>)['x-goog-api-key'] === geminiKey, 'Gemini key is a header')
+  ok(logs.some((l) => l.includes('quota exceeded')), 'gemini quota failure is logged')
+}
+
+{
+  let called = false
+  const { fetch } = mock(async () => { called = true; return bytes(png) })
+  const out = await generateImage('a red fox', {
+    fetch,
+    env: { IMAGE_PROVIDERS: 'gemini', GEMINI_API_KEY: geminiKey }
+  })
+  ok(out.mocked === true && out.provider === 'placeholder' && !called, 'listed gemini without the billing flag makes no request')
 }
 
 {
@@ -107,8 +147,10 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
       fetch,
       log: (l) => logs.push(l),
       env: {
+        IMAGE_PROVIDERS: 'huggingface,gemini,pollinations',
         HF_TOKEN: 'hf_shouldnotleaktoken0001',
-        GEMINI_API_KEY: 'AIzaShouldNotLeak0001234567'
+        GEMINI_API_KEY: 'AIzaShouldNotLeak0001234567',
+        GEMINI_IMAGE_BILLING_CONFIRMED: 'true'
       }
     })
   } catch (e: any) { message = e.message }
@@ -204,6 +246,55 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
   const out = await generateImage('hf fox', { fetch, env: { IMAGE_PROVIDERS: 'huggingface', HF_TOKEN: 'hf_testtokenvalue0001' } })
   ok(out.provider === 'huggingface' && out.model?.includes('stable-diffusion-xl'), 'Hugging Face tries SDXL after FLUX fails')
   ok(calls.length === 2, 'both HF models were requested')
+}
+
+{
+  const savedToken = process.env.REPLICATE_API_TOKEN
+  const savedFlag = process.env.ENABLE_PAID_REPLICATE
+  const savedFetch = globalThis.fetch
+  const tiny = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#336699' } }).png().toBuffer()
+  const restore = () => {
+    globalThis.fetch = savedFetch
+    if (savedToken === undefined) delete process.env.REPLICATE_API_TOKEN
+    else process.env.REPLICATE_API_TOKEN = savedToken
+    if (savedFlag === undefined) delete process.env.ENABLE_PAID_REPLICATE
+    else process.env.ENABLE_PAID_REPLICATE = savedFlag
+  }
+  try {
+    process.env.REPLICATE_API_TOKEN = 'r8_testreplicatetoken0001'
+    delete process.env.ENABLE_PAID_REPLICATE
+    let called = false
+    globalThis.fetch = (async () => { called = true; throw new Error('replicate must not be called') }) as typeof fetch
+    const resized = await runUpscaler(tiny, 2)
+    const meta = await sharp(resized.png).metadata()
+    ok(resized.engine === 'sharp-lanczos3' && resized.kind === 'resize' && !called && meta.width === 16, `token alone stays a sharp resize (${resized.engine}, calls ${called})`)
+
+    process.env.ENABLE_PAID_REPLICATE = 'true'
+    called = false
+    const word = await runUpscaler(tiny, 2)
+    ok(word.engine === 'sharp-lanczos3' && word.kind === 'resize' && !called, 'ENABLE_PAID_REPLICATE must be the exact value 1')
+
+    delete process.env.REPLICATE_API_TOKEN
+    process.env.ENABLE_PAID_REPLICATE = '1'
+    called = false
+    const flagOnly = await runUpscaler(tiny, 2)
+    ok(flagOnly.kind === 'resize' && !called, 'ENABLE_PAID_REPLICATE=1 without a token stays local')
+
+    process.env.REPLICATE_API_TOKEN = 'r8_testreplicatetoken0001'
+    process.env.ENABLE_PAID_REPLICATE = '1'
+    const urls: string[] = []
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const u = String(url)
+      urls.push(u)
+      if (u.includes('api.replicate.com')) return json(201, { status: 'succeeded', output: 'https://cdn.example/up.png' })
+      if (u.includes('cdn.example/up.png')) return bytes(png)
+      throw new Error('unexpected ' + u)
+    }) as typeof fetch
+    const paid = await runUpscaler(tiny, 2)
+    ok(paid.engine === 'replicate-real-esrgan' && paid.kind === 'ai-upscale' && urls.some((u) => u.includes('api.replicate.com') && u.includes('nightmareai/real-esrgan')), 'ENABLE_PAID_REPLICATE=1 plus the token calls Real-ESRGAN')
+  } finally {
+    restore()
+  }
 }
 
 console.log(failed ? `\n${failed} failed` : '\nimage provider tests ok')
