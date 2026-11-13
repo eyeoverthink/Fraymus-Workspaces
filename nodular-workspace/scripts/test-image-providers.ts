@@ -32,11 +32,18 @@ ok(PAID_IMAGE_PROVIDERS.join() === 'openai,replicate', 'paid names are openai an
 
 const paidKeys: Env = { OPENAI_API_KEY: 'sk-test-openai-key-0001', REPLICATE_API_TOKEN: 'r8_testreplicatetoken0001' }
 const geminiKey = 'AIzaTestGeminiKey0001234567890'
-const def = planImageProviders({ ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001', GEMINI_API_KEY: geminiKey })
+const hfToken = 'hf_testtokenvalue0001'
+const def = planImageProviders({ ...paidKeys, HF_TOKEN: hfToken, GEMINI_API_KEY: geminiKey })
 ok(def.order.join() === 'huggingface,pollinations,local', 'unset IMAGE_PROVIDERS uses the default order')
-ok(def.active.join() === 'huggingface,pollinations', 'default active skips local and does not call gemini: ' + def.active.join())
+ok(def.active.join() === 'pollinations', 'a Hugging Face token alone does not call the router: ' + def.active.join())
+ok(def.skipped.some((s) => s.name === 'huggingface' && s.reason.includes('HF_IMAGE_BILLING_CONFIRMED')), 'unconfirmed Hugging Face is skipped')
 ok(!def.active.includes('gemini') && !def.active.includes('openai') && !def.active.includes('replicate'), 'billed and paid providers stay out of the default plan')
 ok(def.gated.map((g) => g.name).join() === 'gemini,openai,replicate', 'gemini and paid keys without a listing are gated')
+const hfOn = planImageProviders({ HF_TOKEN: hfToken, HF_IMAGE_BILLING_CONFIRMED: 'true' })
+ok(hfOn.active.join() === 'huggingface,pollinations', 'Hugging Face runs when the token and HF_IMAGE_BILLING_CONFIRMED=true are set')
+ok(!planImageProviders({ HF_TOKEN: hfToken, HF_IMAGE_BILLING_CONFIRMED: '1' }).active.includes('huggingface'), 'only the exact value true confirms Hugging Face billing')
+const hfUnlisted = planImageProviders({ IMAGE_PROVIDERS: 'pollinations', HF_TOKEN: hfToken, HF_IMAGE_BILLING_CONFIRMED: 'true' })
+ok(!hfUnlisted.active.includes('huggingface') && hfUnlisted.gated.some((g) => g.name === 'huggingface'), 'confirmed Hugging Face stays off when it is not in IMAGE_PROVIDERS')
 
 const listedUnconfirmed = planImageProviders({ IMAGE_PROVIDERS: 'gemini,pollinations', GEMINI_API_KEY: geminiKey })
 ok(listedUnconfirmed.active.join() === 'pollinations', 'listing gemini without the billing flag does not activate it')
@@ -71,7 +78,7 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
   const out = await generateImage('a red fox', {
     fetch,
     log: (l) => logs.push(l),
-    env: { ...paidKeys, HF_TOKEN: 'hf_testtokenvalue0001', GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: 'true' }
+    env: { ...paidKeys, HF_TOKEN: hfToken, HF_IMAGE_BILLING_CONFIRMED: 'true', GEMINI_API_KEY: geminiKey, GEMINI_IMAGE_BILLING_CONFIRMED: 'true' }
   })
   ok(out.provider === 'pollinations' && out.mocked === false, 'falls through HF to Pollinations and skips unlisted Gemini')
   const order = seen.filter((host, i) => host !== seen[i - 1])
@@ -113,6 +120,16 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
 }
 
 {
+  const { fetch, calls } = mock(async (url) => {
+    if (url.includes('router.huggingface.co')) throw new Error('huggingface was called without confirmation')
+    if (url.includes('image.pollinations.ai')) return bytes(png)
+    throw new Error('unexpected ' + url)
+  })
+  const out = await generateImage('a red fox', { fetch, env: { HF_TOKEN: hfToken } })
+  ok(out.provider === 'pollinations' && calls.every((c) => !c.url.includes('huggingface')), 'Hugging Face token without the billing flag makes no Hugging Face request')
+}
+
+{
   const logs: string[] = []
   const { fetch, calls } = mock(async (url) => {
     if (url.includes('api.openai.com')) return json(400, orgBody)
@@ -149,6 +166,7 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
       env: {
         IMAGE_PROVIDERS: 'huggingface,gemini,pollinations',
         HF_TOKEN: 'hf_shouldnotleaktoken0001',
+        HF_IMAGE_BILLING_CONFIRMED: 'true',
         GEMINI_API_KEY: 'AIzaShouldNotLeak0001234567',
         GEMINI_IMAGE_BILLING_CONFIRMED: 'true'
       }
@@ -243,7 +261,7 @@ const orgBody = { error: { message: `organization workgroup mismatch for key ${s
     if (url.includes('stable-diffusion-xl-base-1.0')) return bytes(png)
     throw new Error('unexpected ' + url)
   })
-  const out = await generateImage('hf fox', { fetch, env: { IMAGE_PROVIDERS: 'huggingface', HF_TOKEN: 'hf_testtokenvalue0001' } })
+  const out = await generateImage('hf fox', { fetch, env: { IMAGE_PROVIDERS: 'huggingface', HF_TOKEN: hfToken, HF_IMAGE_BILLING_CONFIRMED: 'true' } })
   ok(out.provider === 'huggingface' && out.model?.includes('stable-diffusion-xl'), 'Hugging Face tries SDXL after FLUX fails')
   ok(calls.length === 2, 'both HF models were requested')
 }

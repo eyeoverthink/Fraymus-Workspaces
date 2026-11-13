@@ -116,7 +116,7 @@ export const builtinTools: Tool[] = [
     }
   },
   {
-    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt using the free-first provider chain (Hugging Face, Pollinations, or a local server). Gemini image generation is billed (gemini-2.5-flash-image) and runs only when IMAGE_PROVIDERS lists gemini and GEMINI_IMAGE_BILLING_CONFIRMED=true. OpenAI and Replicate are not called unless an operator lists them in IMAGE_PROVIDERS and sets their key. Returns an imageUrl.',
+    name: 'generate_image', risk: 'safe', description: 'Generate an image from a text prompt. Pollinations and a local server are the no-confirmation path. Hugging Face (router.huggingface.co) runs only when HF_IMAGE_BILLING_CONFIRMED=true and HF_TOKEN is set, because that route can bill. Gemini (gemini-2.5-flash-image) runs only when IMAGE_PROVIDERS lists gemini and GEMINI_IMAGE_BILLING_CONFIRMED=true. OpenAI and Replicate run only when listed in IMAGE_PROVIDERS with their key. Returns an imageUrl.',
     parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] },
     async run(a) {
       const { png, mocked, provider, model } = await runFlux(String(a.prompt || ''))
