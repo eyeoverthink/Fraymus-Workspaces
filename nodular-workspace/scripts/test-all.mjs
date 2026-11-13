@@ -18,6 +18,7 @@ const env = {
   // Stay offline. The default image chain would call Pollinations (no key).
   IMAGE_PROVIDERS: 'none',
   HF_TOKEN: '',
+  HF_IMAGE_BILLING_CONFIRMED: '',
   GEMINI_API_KEY: '',
   GEMINI_IMAGE_BILLING_CONFIRMED: '',
   OPENAI_API_KEY: '',

@@ -66,9 +66,13 @@ function geminiConfirmed(env: Env): boolean {
   return env.GEMINI_IMAGE_BILLING_CONFIRMED === 'true'
 }
 
+function hfConfirmed(env: Env): boolean {
+  return env.HF_IMAGE_BILLING_CONFIRMED === 'true'
+}
+
 function configured(name: string, env: Env): boolean {
   switch (name) {
-    case 'huggingface': return !!env.HF_TOKEN?.trim()
+    case 'huggingface': return !!env.HF_TOKEN?.trim() && hfConfirmed(env)
     case 'gemini': return !!env.GEMINI_API_KEY?.trim() && geminiConfirmed(env)
     case 'pollinations': return true
     case 'local': return !!env.LOCAL_IMAGE_URL?.trim()
@@ -80,12 +84,15 @@ function configured(name: string, env: Env): boolean {
 
 function credentialPresent(name: string, env: Env): boolean {
   if (name === 'gemini') return !!env.GEMINI_API_KEY?.trim()
+  if (name === 'huggingface') return !!env.HF_TOKEN?.trim()
   return configured(name, env)
 }
 
 function skipReason(name: string, env: Env): string {
   switch (name) {
-    case 'huggingface': return 'HF_TOKEN not set'
+    case 'huggingface':
+      if (!env.HF_TOKEN?.trim()) return 'HF_TOKEN not set'
+      return 'HF_IMAGE_BILLING_CONFIRMED is not true'
     case 'gemini':
       if (!env.GEMINI_API_KEY?.trim()) return 'GEMINI_API_KEY not set'
       return 'GEMINI_IMAGE_BILLING_CONFIRMED is not true'
@@ -112,14 +119,14 @@ export function planImageProviders(env: Env = process.env): ImagePlan {
     active.push(name)
   }
   const gated: ProviderSkip[] = []
-  for (const name of [...BILLED_IMAGE_PROVIDERS, ...PAID_IMAGE_PROVIDERS]) {
+  for (const name of ['huggingface', ...BILLED_IMAGE_PROVIDERS, ...PAID_IMAGE_PROVIDERS]) {
     if (!order.includes(name) && credentialPresent(name, env)) {
-      gated.push({
-        name,
-        reason: name === 'gemini'
-          ? 'billed; list gemini in IMAGE_PROVIDERS and set GEMINI_IMAGE_BILLING_CONFIRMED=true'
+      const reason = name === 'gemini'
+        ? 'billed; list gemini in IMAGE_PROVIDERS and set GEMINI_IMAGE_BILLING_CONFIRMED=true'
+        : name === 'huggingface'
+          ? 'router.huggingface.co can bill; list huggingface and set HF_IMAGE_BILLING_CONFIRMED=true'
           : 'opt-in only; not listed in IMAGE_PROVIDERS'
-      })
+      gated.push({ name, reason })
     }
   }
   return { order, active, skipped, gated }
@@ -194,6 +201,9 @@ function hfModels(env: Env): string[] {
 }
 
 async function fromHuggingFace(prompt: string, env: Env, fetchImpl: ImageFetch): Promise<{ png: Buffer; model: string }> {
+  if (!env.HF_TOKEN?.trim() || !hfConfirmed(env)) {
+    throw new Error('HF_IMAGE_BILLING_CONFIRMED is not true')
+  }
   const errors: string[] = []
   for (const model of hfModels(env)) {
     const schnell = /schnell/i.test(model)

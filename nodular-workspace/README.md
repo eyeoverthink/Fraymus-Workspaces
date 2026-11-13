@@ -3,7 +3,7 @@
 
 5-node chain: Llama Groq (brain) -> FLUX schnell (image) -> BiRefNet Remover -> sharp resize (Real-ESRGAN only if you opt in) -> HTML Preview + Deploy API
 
-The default path uses free and local tools. Gemini image generation and Real-ESRGAN stay off until you opt in. See Image generation below.
+The default path is Pollinations and local tools. Hugging Face, Gemini, and Real-ESRGAN stay off until you confirm billing. See Image generation below.
 
 ## Quick Start
 
@@ -32,7 +32,7 @@ npm run dev:all
 - Server: http://localhost:3001
 - Health: `curl http://localhost:3001/health` returns `{"ok":true,"store":"sqlite"}` with the default SQLite store. `store` is `"supabase"` when `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are set.
 
-The API listens on `0.0.0.0`. Leaving `CLERK_SECRET_KEY` unset keeps auth open so local dev works without Clerk, and that includes the MCP token-minting API. Do not publish port 3001 until Clerk is configured or the host is on a private network. See Security below.
+The API listens on `0.0.0.0`. Leaving `CLERK_SECRET_KEY` unset keeps auth open so local dev works without Clerk, and that includes the MCP token-minting API. `POST /api/flux` and the upscaler spend the server's keys, so an open port plus a billing confirmation lets any caller trigger charges. Do not publish port 3001 until Clerk is configured or the host is on a private network. See Security below.
 
 ## What Was Added (Full, No Stubs)
 
@@ -48,7 +48,7 @@ All free tier, no credit card:
 - Groq: https://console.groq.com - Llama 3.3 70B 14k tok/s
 - HuggingFace: https://huggingface.co/settings/tokens - FLUX schnell + RMBG-1.4
 
-Without keys, Groq returns a mock enhanced prompt and the remover/upscaler stay on a local sharp resize. Image generation follows `IMAGE_PROVIDERS` (default `huggingface,pollinations,local`). With nothing configured except that default, the only live call is the no-key [Pollinations](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) endpoint, which sends the prompt off this server. Set `IMAGE_PROVIDERS=none` for an SVG placeholder and no image request. Gemini, OpenAI, and Replicate are not called unless you list them. Gemini also needs `GEMINI_IMAGE_BILLING_CONFIRMED=true`. Real-ESRGAN runs only when `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set.
+Without keys, Groq returns a mock enhanced prompt and the remover/upscaler stay on a local sharp resize. Image generation follows `IMAGE_PROVIDERS` (default `huggingface,pollinations,local`). With nothing configured except that default, the only live call is the no-key [Pollinations](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) endpoint, which sends the prompt off this server. Set `IMAGE_PROVIDERS=none` for an SVG placeholder and no image request. Hugging Face runs only when `HF_IMAGE_BILLING_CONFIRMED=true` and `HF_TOKEN` is set. Gemini, OpenAI, and Replicate are not called unless you list them. Gemini also needs `GEMINI_IMAGE_BILLING_CONFIRMED=true`. Real-ESRGAN runs only when `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set.
 
 ## Deploy as Product
 
@@ -92,7 +92,7 @@ Tools run automatically when safe; risky ones (`http_get`, `run_workflow`, `hype
 
 | Provider | When it runs | Cost |
 |---|---|---|
-| `huggingface` | `HF_TOKEN` set. Tries `black-forest-labs/FLUX.1-schnell`, then `stabilityai/stable-diffusion-xl-base-1.0`, on `router.huggingface.co` | Hugging Face Inference Providers free quota |
+| `huggingface` | In the provider list, `HF_TOKEN` set, and `HF_IMAGE_BILLING_CONFIRMED=true`. Tries `black-forest-labs/FLUX.1-schnell`, then `stabilityai/stable-diffusion-xl-base-1.0`, on `router.huggingface.co`. A token alone does nothing. | Included credits, then billed if the Hugging Face account has billing on. [Inference Providers](https://huggingface.co/docs/inference-providers/pricing) |
 | `pollinations` | Always, unless you remove it from the list. `GET https://image.pollinations.ai/prompt/...` | No key. Anonymous and rate-limited. The prompt leaves this server. [API notes](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md) |
 | `local` | `LOCAL_IMAGE_URL` set. `LOCAL_IMAGE_KIND` is `a1111` (Automatic1111), `comfy` (ComfyUI), or `openai` / `ollama` (a local OpenAI-compatible `/v1/images/generations`; stock Ollama does not draw images) | Your machine |
 | `gemini` | Listed in `IMAGE_PROVIDERS`, `GEMINI_API_KEY` set, and `GEMINI_IMAGE_BILLING_CONFIRMED=true`. Model `gemini-2.5-flash-image` (Nano Banana). A key or the flag alone does nothing. | Billed. Google's pricing page lists no free tier for this model. [Pricing](https://ai.google.dev/gemini-api/docs/pricing) |
