@@ -1,9 +1,9 @@
 
 # NODULAR WORKSPACE - FULL IMPLEMENTATION (No Stubs)
 
-5-node chain: Llama Groq (brain) â†’ FLUX schnell (image) â†’ BiRefNet Remover â†’ Real-ESRGAN Upscaler â†’ HTML Preview + Deploy API
+5-node chain: Llama Groq (brain) -> FLUX schnell (image) -> BiRefNet Remover -> sharp resize (Real-ESRGAN only if you opt in) -> HTML Preview + Deploy API
 
-Rebuild of $4M Enhancor Workflows video using 100% FREE 2026 stack.
+The default path uses free and local tools. Gemini image generation and Real-ESRGAN stay off until you opt in. See Image generation below.
 
 ## Quick Start
 
@@ -37,7 +37,7 @@ The API listens on `0.0.0.0`. Leaving `CLERK_SECRET_KEY` unset keeps auth open s
 ## What Was Added (Full, No Stubs)
 
 - BackgroundRemoverNode.tsx - indigo border, BiRefNet free WASM, shows transparent checkerboard preview
-- UpscalerNode.tsx - green border, Sharp 4x lanczos3, shows 4K output
+- UpscalerNode.tsx - green border, local sharp lanczos3 resize (not AI upscaling), shows the larger output
 - executor.ts - full DAG topological sort, handles image blobs, error handling, progress callbacks
 - server/index.ts - 6 full routes, no TODOs, sharp for upscaler, HF proxies for FLUX/RMBG, Socket.io REA
 - AGENT_INSTRUCTIONS.md - briefing for Codex/Devin dumb agent
@@ -59,7 +59,7 @@ This endpoint is your product. Charge per call. System prompt chain is moat.
 
 ## For Codex/Devin
 
-Read AGENT_INSTRUCTIONS.md - explains what was built, file map, expectations, acceptance criteria. Implement true BiRefNet WASM via @imgly/background-removal-node and true Real-ESRGAN via replicate, add Supabase persistence, auth, billing.
+Read AGENT_INSTRUCTIONS.md - explains what was built, file map, expectations, acceptance criteria. BiRefNet removal already runs locally. Real-ESRGAN stays off unless `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set. Do not call Replicate just because the token exists.
 
 ## Video Concept
 
@@ -70,7 +70,7 @@ Wrapper dies, workflow is IP. System prompt chain is moat, not model. This repo 
 
 See DEPLOY.md for Docker/Fly/Railway and env vars (.env.example).
 Verified: server pipeline, deploy + API-key runs, SQLite persistence, credits, local background removal, UI build.
-Written but untested without your accounts: Supabase store, Clerk auth, Stripe metering/checkout (no webhook), Replicate Real-ESRGAN (sharp lanczos3 is used otherwise), Docker build.
+Written but untested without your accounts: Supabase store, Clerk auth, Stripe metering/checkout (no webhook), Replicate Real-ESRGAN (only when `ENABLE_PAID_REPLICATE=1` and `REPLICATE_API_TOKEN` are both set; otherwise a sharp lanczos3 resize), Docker build.
 
 
 ## Agents
